@@ -1,0 +1,35 @@
+manifestVersion: "1.0.0"
+id: yumtech
+category: bitcoin
+name: YUMTECH
+version: "0.3.0"
+icon: "https://raw.githubusercontent.com/yumtech-mining/yumtech-umbrel-apps/main/yumtech/icon.png"
+tagline: Bağımsız Bitcoin solo madencilik altyapısı
+description: >-
+  YUMTECH, Umbrel üzerinde çalışan kurumsal nitelikte, bağımsız ve
+  self-hosted bir Bitcoin solo madencilik yönetim platformudur. Bitcoin Core
+  veya Bitcoin Knots node'unuzla doğrudan çalışır; Stratum V1 ve Stratum V2 bağlantıları,
+  otomatik vardiff, gerçek share difficulty, Best Share ve blok takibi sunar.
+
+  ASIC cihazlar TCP 3333 üzerinden güvenli biçimde bağlanır. Solo madencilik
+  ödemesi, Stratum kullanıcı adı olarak tanımlanan Bitcoin adresine yönelir.
+  Havuz, node ve madencilik verileri kullanıcının kendi Umbrel sisteminde kalır.
+
+  YUMTECH kontrol paneli canlı hashrate, aktif ASIC cihazları, paylaşımlar,
+  Round Effort, bulunan bloklar ve bağlı Bitcoin node'unun durumunu tek merkezden,
+  salt okunur operasyon ekranıyla izlemeyi sağlar.
+releaseNotes: >-
+  Temiz YUMTECH uygulama kimliği ve Raspberry Pi ARM64 düzeltmesi yayımlandı.
+developer: YUMTECH MADENCİLİK A.Ş
+website: https://github.com/yumtech-mining/yumtech-umbrel-apps
+dependencies:
+  - bitcoin
+repo: https://github.com/yumtech-mining/yumtech-umbrel-apps
+support: https://github.com/yumtech-mining/yumtech-umbrel-apps/issues
+port: 8095
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: yumtech-mining
+submission: https://github.com/yumtech-mining/yumtech-umbrel-apps

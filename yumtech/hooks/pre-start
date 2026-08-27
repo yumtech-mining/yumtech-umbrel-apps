@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SOURCE_DIR="${APP_ROOT}/dashboard"
+DATA_DIR="${APP_ROOT}/data"
+PUBLIC_DIR="${DATA_DIR}/public"
+RUNTIME_DIR="${DATA_DIR}/dashboard-runtime"
+BACKUP_DIR="${DATA_DIR}/dashboard-runtime.previous"
+
+required=(
+  "server.py"
+  "ensure_sv2_identity.py"
+  "ensure_database_state.py"
+  "generate_pool_config.py"
+  "static/index.html"
+  "static/app.js"
+  "static/style.css"
+  "static/yumtech-logo.png"
+)
+
+for relative_path in "${required[@]}"; do
+  if [[ ! -f "${SOURCE_DIR}/${relative_path}" ]]; then
+    printf 'Missing YUMTECH dashboard file: %s\n' "${relative_path}" >&2
+    exit 1
+  fi
+done
+
+install -d -m 755 "${DATA_DIR}" "${PUBLIC_DIR}"
+STAGING_DIR="$(mktemp -d "${DATA_DIR}/.dashboard-runtime.XXXXXX")"
+
+cleanup() {
+  if [[ -n "${STAGING_DIR:-}" && -d "${STAGING_DIR}" ]]; then
+    rm -rf -- "${STAGING_DIR}"
+  fi
+}
+trap cleanup EXIT
+
+tar -C "${SOURCE_DIR}" -cf - \
+  server.py \
+  ensure_sv2_identity.py \
+  ensure_database_state.py \
+  generate_pool_config.py \
+  static | tar -xf - -C "${STAGING_DIR}"
+
+chmod 755 \
+  "${STAGING_DIR}/ensure_sv2_identity.py" \
+  "${STAGING_DIR}/ensure_database_state.py" \
+  "${STAGING_DIR}/generate_pool_config.py"
+
+rm -rf -- "${BACKUP_DIR}"
+if [[ -d "${RUNTIME_DIR}" ]]; then
+  mv -- "${RUNTIME_DIR}" "${BACKUP_DIR}"
+fi
+mv -- "${STAGING_DIR}" "${RUNTIME_DIR}"
+STAGING_DIR=""
+
+rm -rf -- "${BACKUP_DIR}"
+printf 'YUMTECH dashboard runtime 0.3.0 installed.\n'

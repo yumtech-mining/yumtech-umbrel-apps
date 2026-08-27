@@ -1,0 +1,48 @@
+name: Build YUMTECH image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-yumtech.yml"
+      - "yumtech/Dockerfile"
+      - "yumtech/dashboard/**"
+      - "yumtech/mkpool-src/**"
+      - "yumtech/scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish YUMTECH
+        uses: docker/build-push-action@v6
+        with:
+          context: yumtech
+          file: yumtech/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/yumtech:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

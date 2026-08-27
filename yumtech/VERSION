@@ -1,0 +1,8 @@
+package: 0.3.0
+mkpool: v.0.3.0
+mkpool commit: d2e48192abcfd0c17b43862088e575c98587f790
+dashboard: YUMTECH 0.3.0
+coinbase signature: /YUMTECH/
+database repair: persistent shares, best share and round effort
+SV1 port 3333 starting difficulty: 16384
+share display: achieved difficulty from submitted hash

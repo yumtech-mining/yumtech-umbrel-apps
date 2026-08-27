@@ -1,0 +1,113 @@
+version: "3.7"
+
+services:
+
+  app_proxy:
+    environment:
+      APP_HOST: yumtech_dashboard_1
+      APP_PORT: 8095
+
+  db:
+    image: timescale/timescaledb@sha256:981e3016a2810fec47515e3828ad70ae97b84f4c9ef63d032180b54f61566fd6
+    restart: on-failure
+    stop_grace_period: 1m
+
+    environment:
+      POSTGRES_DB: mkpool
+      POSTGRES_USER: mkpool_user
+      POSTGRES_PASSWORD: ${APP_PASSWORD}
+      TIMESCALEDB_TELEMETRY: "off"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mkpool_user -d mkpool"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+    volumes:
+      - ${APP_DATA_DIR}/data/postgres:/var/lib/postgresql/data
+
+
+  mkpool:
+    image: ghcr.io/yumtech-mining/yumtech@sha256:7db4957fcca3b810ea8474375e24621c43c26111e74b5867580c99d2dc47e4c3
+    restart: on-failure
+    stop_grace_period: 30s
+
+    command:
+      - /bin/sh
+      - -c
+      - |
+          set -eu
+          python3 /opt/yumtech/dashboard-runtime/ensure_sv2_identity.py
+          until python3 /opt/yumtech/dashboard-runtime/ensure_database_state.py; do
+            echo "Waiting for the YUMTECH database state..."
+            sleep 2
+          done
+          exec /opt/yumtech/scripts/start-mkpool.sh
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    ports:
+      - "3333:3333/tcp"
+      - "3340:3340/tcp"
+
+    environment:
+      DB_HOST: yumtech_db_1
+      DB_PORT: "5432"
+      DB_NAME: mkpool
+      DB_USER: mkpool_user
+      DB_PASS: ${APP_PASSWORD}
+
+      BITCOIN_RPC_HOST: ${APP_BITCOIN_NODE_IP}
+      BITCOIN_RPC_PORT: ${APP_BITCOIN_RPC_PORT}
+      BITCOIN_RPC_USER: ${APP_BITCOIN_RPC_USER}
+      BITCOIN_RPC_PASS: ${APP_BITCOIN_RPC_PASS}
+
+      BITCOIN_ZMQ_HOST: ${APP_BITCOIN_NODE_IP}
+      BITCOIN_ZMQ_HASHBLOCK_PORT: ${APP_BITCOIN_ZMQ_HASHBLOCK_PORT}
+      BITCOIN_ZMQ_RAWBLOCK_PORT: ${APP_BITCOIN_ZMQ_RAWBLOCK_PORT}
+
+    volumes:
+      - ${APP_DATA_DIR}/data/mkpool:/data
+      - ${APP_DATA_DIR}/data/runtime:/run/mkpool
+      - ${APP_DATA_DIR}/secrets:/data/secrets
+      - ${APP_DATA_DIR}/data/public:/data/public
+      - ${APP_DATA_DIR}/data/dashboard-runtime:/opt/yumtech/dashboard-runtime:ro
+      - ${APP_DATA_DIR}/data/dashboard-runtime/generate_pool_config.py:/opt/yumtech/scripts/generate-config.py:ro
+
+
+  dashboard:
+    image: ghcr.io/yumtech-mining/yumtech@sha256:7db4957fcca3b810ea8474375e24621c43c26111e74b5867580c99d2dc47e4c3
+    restart: on-failure
+
+    command:
+      - python3
+      - /opt/yumtech/dashboard-runtime/server.py
+
+    depends_on:
+      - mkpool
+
+    environment:
+      DB_HOST: yumtech_db_1
+      DB_PORT: "5432"
+      DB_NAME: mkpool
+      DB_USER: mkpool_user
+      DB_PASS: ${APP_PASSWORD}
+
+      MKPOOL_CTL: /opt/yumtech/mkpool-src/scripts/mkpool-ctl.py
+      MKPOOL_SOCKET: /run/mkpool/mkpool.sock
+      DASHBOARD_PORT: "8095"
+      SV2_PUBLIC_KEY_FILE: /data/public/sv2-authority-public.hex
+
+      BITCOIN_RPC_HOST: ${APP_BITCOIN_NODE_IP}
+      BITCOIN_RPC_PORT: ${APP_BITCOIN_RPC_PORT}
+      BITCOIN_RPC_USER: ${APP_BITCOIN_RPC_USER}
+      BITCOIN_RPC_PASS: ${APP_BITCOIN_RPC_PASS}
+
+    volumes:
+      - ${APP_DATA_DIR}/data/runtime:/run/mkpool
+      - ${APP_DATA_DIR}/data/dashboard-runtime:/opt/yumtech/dashboard-runtime:ro
+      - ${APP_DATA_DIR}/data/public:/data/public:ro
