@@ -173,6 +173,40 @@ std::string safe_id_json(const nlohmann::json& msg) {
     return "null";
 }
 
+// Best-effort submitSolution over the Bitcoin Core mining IPC for a Stage-B
+// (IPC-sourced) job. submitblock remains the guaranteed delivery path, so this
+// additionally exercises the node-assembled path; the node de-duplicates the
+// two. version/nTime/nonce are read from the solved 80-byte header (little
+// endian at byte offsets 0, 68, 76 -> hex offsets 0, 136, 152).
+inline void ipc_submit_best_effort(const StratifierPtr& strat, const std::string& client_ip,
+                                   std::uint64_t handle, const std::string& header_hex,
+                                   const std::string& coinbase_hex)
+{
+    if (!strat || handle == 0 || header_hex.size() < 160)
+        return;
+    auto u32le = [](const std::string& h, std::size_t off) -> std::uint32_t {
+        const auto b = utils::hex_to_bytes(h.substr(off, 8));
+        if (b.size() != 4) return 0;
+        return std::uint32_t(b[0]) | (std::uint32_t(b[1]) << 8)
+             | (std::uint32_t(b[2]) << 16) | (std::uint32_t(b[3]) << 24);
+    };
+    const std::uint32_t version = u32le(header_hex, 0);
+    const std::uint32_t ntime   = u32le(header_hex, 136);
+    const std::uint32_t nonce   = u32le(header_hex, 152);
+    const auto coinbase = utils::hex_to_bytes(coinbase_hex);
+    bool accepted = false;                // node's ProcessNewBlock result: valid & accepted
+    const bool call_ok = strat->ipcSubmit(handle, version, ntime, nonce, coinbase, accepted);
+    if (call_ok && accepted)
+        spdlog::info("[Session {}] IPC submitSolution ACCEPTED (valid) handle={}; submitblock follows as guaranteed record (node de-dupes)",
+                     client_ip, handle);
+    else if (call_ok)
+        spdlog::warn("[Session {}] IPC submitSolution reported INVALID handle={}; submitblock will confirm the block",
+                     client_ip, handle);
+    else
+        spdlog::debug("[Session {}] IPC submitSolution unavailable/timed out handle={}; submitblock delivers",
+                      client_ip, handle);
+}
+
 } // anonymous
 
 // ---------------------------------------------------------------------------
@@ -1273,7 +1307,6 @@ std::string ClientSession::build_session_coinbase2(
     std::int64_t miner_value = remaining_pool_value - donation;
 
     bool add_commit = job.segwit_active && !job.witness_commitment.empty();
-    
     int outputs = 0;
     if (coin_.chain == ChainKind::eCash) {
         outputs = (donation > 0 ? 2 : 1) + 2; // miner + donation + miner_fund + staking_rewards
@@ -1880,6 +1913,10 @@ void ClientSession::submit_block_candidate(const JobPtr& job, const std::string&
     // the time the RPC returns); btc_ is a shared_ptr copy so the precious
     // call stays valid. preciousblock shipped in Bitcoin Core 0.14 and exists
     // on every chain we run except zcashd (0.11-era fork), so skip Zcash.
+    // Also deliver via the node's mining IPC when this job was sourced
+    // over IPC. submitblock below stays the guaranteed path (the node de-dupes).
+    ipc_submit_best_effort(strat_, client_ip_, job->ipc_handle, header_hex, cb_for_block);
+
     const bool use_precious = (coin_.chain != ChainKind::Zcash);
     btc_->asyncSubmitBlock(full_block,
         [worker, height = job->height, block_hash_hex, miner_id_for_block,
@@ -2522,6 +2559,7 @@ void ClientSession::submit_block_sv2(const JobPtr& job,
     const double diff_for_block = share_diff;
 
     spdlog::info("[SV2 Session {}] BLOCK CANDIDATE share_diff={:.4f}", client_ip_, share_diff);
+    ipc_submit_best_effort(strat_, client_ip_, job ? job->ipc_handle : 0, header_hex, cb_for_block);
     btc_->asyncSubmitBlock(full_block,
         [block_hash_hex, miner_id_for_block, height_for_block, diff_for_block,
          btc = btc_, use_precious = (coin_.chain != ChainKind::Zcash)]

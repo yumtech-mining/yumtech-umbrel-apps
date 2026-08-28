@@ -210,6 +210,12 @@ validate_port() {
     ((value >= 1 && value <= 65535)) || die "${name} 1-65535 arasında olmalı."
 }
 
+validate_nonnegative_integer() {
+    local name="$1"
+    local value="$2"
+    [[ "${value}" =~ ^[0-9]+$ ]] || die "${name} sıfır veya pozitif bir sayı olmalı."
+}
+
 env_quote() {
     local value="$1"
     validate_plain_value "Ortam değeri" "${value}"
@@ -221,6 +227,9 @@ env_quote() {
 write_environment() {
     local temporary
     local db_password=""
+    local ipc_socket=""
+    local ipc_template="true"
+    local ipc_fee_threshold="0"
 
     prompt_value BITCOIN_RPC_HOST \
         "Bitcoin Core/Knots RPC adresi" "host.docker.internal"
@@ -237,9 +246,17 @@ write_environment() {
     validate_port BITCOIN_ZMQ_RAWBLOCK_PORT "${BITCOIN_ZMQ_RAWBLOCK_PORT}"
     validate_port BITCOIN_ZMQ_HASHBLOCK_PORT "${BITCOIN_ZMQ_HASHBLOCK_PORT}"
 
+    ipc_socket="${BITCOIN_IPC_SOCKET:-$(read_managed_env_value BITCOIN_IPC_SOCKET || true)}"
+    ipc_template="${BITCOIN_IPC_TEMPLATE:-$(read_managed_env_value BITCOIN_IPC_TEMPLATE || true)}"
+    ipc_template="${ipc_template:-true}"
+    ipc_fee_threshold="${BITCOIN_IPC_FEE_THRESHOLD:-$(read_managed_env_value BITCOIN_IPC_FEE_THRESHOLD || true)}"
+    ipc_fee_threshold="${ipc_fee_threshold:-0}"
+    validate_nonnegative_integer BITCOIN_IPC_FEE_THRESHOLD "${ipc_fee_threshold}"
+
     for variable_name in \
         BITCOIN_RPC_HOST BITCOIN_RPC_USER BITCOIN_RPC_PASS \
-        BITCOIN_ZMQ_HOST YUMTECH_DASHBOARD_BIND DATA_DIR; do
+        BITCOIN_ZMQ_HOST YUMTECH_DASHBOARD_BIND DATA_DIR \
+        ipc_socket ipc_template; do
         validate_plain_value "${variable_name}" "${!variable_name}"
     done
 
@@ -261,6 +278,10 @@ write_environment() {
             "$(env_quote "${BITCOIN_ZMQ_RAWBLOCK_PORT}")"
         printf 'BITCOIN_ZMQ_HASHBLOCK_PORT=%s\n' \
             "$(env_quote "${BITCOIN_ZMQ_HASHBLOCK_PORT}")"
+        printf 'BITCOIN_IPC_SOCKET=%s\n' "$(env_quote "${ipc_socket}")"
+        printf 'BITCOIN_IPC_TEMPLATE=%s\n' "$(env_quote "${ipc_template}")"
+        printf 'BITCOIN_IPC_FEE_THRESHOLD=%s\n' \
+            "$(env_quote "${ipc_fee_threshold}")"
         printf 'YUMTECH_DASHBOARD_BIND=%s\n' \
             "$(env_quote "${YUMTECH_DASHBOARD_BIND}")"
     } >"${temporary}"
@@ -300,7 +321,9 @@ prepare_data_directories() {
         "${DATA_DIR}/postgres" \
         "${DATA_DIR}/mkpool" \
         "${DATA_DIR}/runtime" \
+        "${DATA_DIR}/bitcoin-ipc" \
         "${DATA_DIR}/public"
+    chmod 1777 "${DATA_DIR}/bitcoin-ipc"
     install -d -m 700 "${DATA_DIR}/secrets"
 }
 

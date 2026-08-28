@@ -148,7 +148,28 @@ void PoolManager::start() {
             main_io_, rt.btc, rt.cfg.useZMQ,
             std::chrono::seconds(rt.cfg.blockPollInterval > 0 ? rt.cfg.blockPollInterval : 10));
         rt.generator->setZmqEndpoints(rt.cfg.zmq.hashblock, rt.cfg.zmq.rawblock, rt.cfg.zmq.rawtx);
-        
+
+        // Bitcoin Core mining IPC is a Bitcoin-only accelerator (no altcoin fork
+        // ships the interface). Gate strictly on ChainKind::Bitcoin; every other
+        // coin stays on ZMQ + getblocktemplate, untouched. When the socket is set
+        // the Generator drives block notifications from the node's mining IPC and
+        // falls back to ZMQ/RPC if it is unreachable.
+        if (rt.cfg.chain == ChainKind::Bitcoin && !rt.cfg.ipcSocket.empty()) {
+            rt.generator->setIpcSocket(rt.cfg.ipcSocket, rt.cfg.ipcTemplate, rt.cfg.ipcFeeThreshold);
+            // Let the submit path deliver solved IPC-sourced blocks via
+            // submitSolution (redundant with submitblock, which stays the
+            // guaranteed path). Raw Generator* is safe: it outlives the Stratifier.
+            Generator* gen = rt.generator.get();
+            rt.stratifier->setIpcSubmit(
+                [gen](std::uint64_t h, std::uint32_t v, std::uint32_t t, std::uint32_t n,
+                      const std::vector<std::uint8_t>& cb, bool& accepted) {
+                    return gen->ipcSubmitSolution(h, v, t, n, cb, accepted);
+                });
+            spdlog::info("[PoolManager] {} mining IPC enabled via {} (template={})",
+                         rt.cfg.name, rt.cfg.ipcSocket, rt.cfg.ipcTemplate);
+        }
+
+
         if (rt.cfg.aux.enabled && rt.auxBtc) {
             rt.generator->setAuxClient(rt.auxBtc, rt.cfg.aux.payoutAddress);
         }

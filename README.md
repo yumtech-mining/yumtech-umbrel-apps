@@ -3,6 +3,8 @@
 YUMTECH; Bitcoin Core veya Bitcoin Knots ile çalışan, self-hosted solo
 madencilik altyapısıdır. Stratum V1, Stratum V2, vardiff, gerçek share
 difficulty, Best Share, Round Effort, blok takibi ve canlı dashboard sunar.
+Bitcoin Core 30+ multiprocess kurulumlarında mining IPC'yi kullanabilir; IPC
+kullanılamadığında RPC/ZMQ yoluna otomatik döner.
 
 ## Linux
 

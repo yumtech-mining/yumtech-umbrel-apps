@@ -23,6 +23,12 @@
 #include "generator.hpp"
 #include "logger.hpp"
 #include "utils.hpp"
+#ifdef HAVE_CAPNP
+#include "ipc_mining.hpp"
+#include <boost/asio/post.hpp>
+#include <thread>
+#include <chrono>
+#endif
 
 namespace mkpool {
 
@@ -62,11 +68,35 @@ namespace mkpool {
 		}
 		mkpool::Logger::info("[Generator] Starting...");
 
-		if (useZMQ_) {
-			startZMQ();
+		bool ipc_started = false;
+#ifdef HAVE_CAPNP
+		{
+			std::string sock;
+			{
+				std::lock_guard<std::mutex> lock(mtx_);
+				sock = ipcSocket_;
+			}
+			if (!sock.empty()) {
+				startIpcNotify();
+				ipc_started = true;
+			}
 		}
-		else {
-			startRPCPolling();
+#else
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			if (!ipcSocket_.empty()) {
+				mkpool::Logger::warn("[Generator] ipcSocket set but this build has no IPC support; using ZMQ/RPC.");
+			}
+		}
+#endif
+
+		if (!ipc_started) {
+			if (useZMQ_) {
+				startZMQ();
+			}
+			else {
+				startRPCPolling();
+			}
 		}
 
 		// Begin periodic (30s) job rebroadcast keepalive.
@@ -80,6 +110,25 @@ namespace mkpool {
 
 		stopped_ = true;
 		running_ = false;
+
+#ifdef HAVE_CAPNP
+		// Signal, then interrupt any in-flight waitNext/waitTipChanged so the
+		// notify thread returns at once rather than running out its timeout
+		// window, then join. It takes no locks of ours, so this cannot deadlock
+		// against a template refresh it posted to io_context_.
+		ipcRunning_ = false;
+		{
+			std::shared_ptr<ipc::Client> c;
+			{
+				std::lock_guard<std::mutex> lk(ipcSubmitMtx_);
+				c = ipcClient_;
+			}
+			if (c) c->interrupt();
+		}
+		if (ipcThread_.joinable()) {
+			ipcThread_.join();
+		}
+#endif
 
 		// Stop watchdog
 		{
@@ -507,5 +556,219 @@ namespace mkpool {
 		auxClient_ = std::move(client);
 		auxPayoutAddress_ = payoutAddress;
 	}
+
+	bool Generator::ipcSubmitSolution(std::uint64_t handle, std::uint32_t version,
+		std::uint32_t timestamp, std::uint32_t nonce,
+		const std::vector<std::uint8_t>& coinbase, bool& accepted)
+	{
+#ifdef HAVE_CAPNP
+		// Copy the connection handle under the lock, then call without it: the
+		// copy keeps the object alive across the (thread-safe) submit, and the
+		// notify thread's shutdown() makes a later ~Client safe on any thread.
+		std::shared_ptr<ipc::Client> c;
+		{
+			std::lock_guard<std::mutex> lk(ipcSubmitMtx_);
+			c = ipcClient_;
+		}
+		if (!c)
+			return false;
+		return c->submit_solution(handle, version, timestamp, nonce, coinbase, accepted);
+#else
+		(void)handle; (void)version; (void)timestamp; (void)nonce; (void)coinbase; (void)accepted;
+		return false;
+#endif
+	}
+
+#ifdef HAVE_CAPNP
+	// Build a getblocktemplate-shaped JSON from an IPC template so the existing
+	// Stratifier pipeline consumes it unchanged. Carries the node-precomputed
+	// merkle branch and the template handle as mkpool-private extension keys;
+	// omits per-tx "txid" (not needed once the branch is precomputed).
+	static nlohmann::json synth_ipc_gbt(const ipc::Template& t)
+	{
+		nlohmann::json r;
+		r["version"]                   = t.version;
+		r["previousblockhash"]         = t.prevhash;
+		r["curtime"]                   = t.curtime;
+		r["mintime"]                   = t.curtime;
+		r["bits"]                      = t.bits;
+		r["height"]                    = t.height;
+		r["coinbasevalue"]             = t.coinbase_value;
+		const auto tgt = utils::target_from_bits_hex(t.bits);
+		r["target"]                    = utils::bytes_to_hex({ tgt.data(), tgt.size() });
+		r["default_witness_commitment"] = t.witness_commitment;
+
+		nlohmann::json txs = nlohmann::json::array();
+		for (const auto& d : t.tx_hexes) txs.push_back(nlohmann::json{ {"data", d} });
+		r["transactions"] = std::move(txs);
+
+		r["mkpool_ipc_branch"] = t.merkle_branch;
+		r["mkpool_ipc_handle"] = t.handle;
+
+		nlohmann::json out;
+		out["result"] = std::move(r);
+		return out;
+	}
+
+	void Generator::startIpcNotify()
+	{
+		// IPC is the notification source; the GBT poll stays as a backstop. We
+		// still generate work via getblocktemplate when template mode is off, so
+		// useZMQ_ is cleared and the poll timer runs at its normal interval as a
+		// safety net beneath the IPC notifications.
+		useZMQ_ = false;
+		mkpool::Logger::info("[Generator] Using bitcoin-node mining IPC {} for block notifications", ipcSocket_);
+
+		// Fetch an initial template so miners have work before the first IPC
+		// notification arrives. Runs on the io thread (start() context).
+		pollBlockTemplate();
+
+		ipcRunning_ = true;
+		ipcThread_ = std::thread([this] { ipcNotifyLoop(); });
+	}
+
+	void Generator::ipcNotifyLoop()
+	{
+		using namespace std::chrono_literals;
+
+		bool tmpl_mode;
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			tmpl_mode = ipcTemplate_;
+		}
+
+		auto interruptible_sleep = [this](std::chrono::milliseconds total) {
+			const auto step = 100ms;
+			for (auto slept = 0ms; slept < total && ipcRunning_; slept += step)
+				std::this_thread::sleep_for(step);
+		};
+
+		// Publish a usable IPC template into the pipeline (posted to the io
+		// thread). Returns false if the template cannot be used (a required output
+		// other than the witness commitment, or no merkle branch) so the caller
+		// can fall back to GBT.
+		auto publish = [this](const ipc::Template& t) -> bool {
+			// An empty merkle branch is valid: a coinbase-only block (empty
+			// mempool, e.g. regtest or a briefly drained mempool) has no branch
+			// because the merkle root is simply the coinbase txid. Publish it so
+			// the job still carries the IPC handle (submitSolution path). Only a
+			// required output we cannot honour makes a template truly unusable.
+			if (t.extra_required_outputs)
+				return false;
+			mkpool::Logger::info("[Generator] IPC template height {} branch={} txs={} wc={}",
+				t.height, t.merkle_branch.size(), t.tx_hexes.size(),
+				t.witness_commitment.empty() ? "no" : "yes");
+			auto j = synth_ipc_gbt(t);
+			boost::asio::post(io_context_, [this, j = std::move(j)]() mutable {
+				// IPC may return a better same-tip template after the configured
+				// fee threshold. Treat it as a refresh so the Stratifier publishes
+				// it even when previousblockhash is unchanged. The independent RPC
+				// backstop timer was armed during startIpcNotify().
+				handleBlockTemplate({}, j, false);
+			});
+			return true;
+		};
+		auto gbt_fallback = [this] {
+			boost::asio::post(io_context_, [this] { pollBlockTemplate(); });
+		};
+
+		// waitNext feeThreshold: the node returns a fresh template once mempool
+		// fees rise by this many sats (or on a new tip). Config 0 means
+		// tip-change only, which the schema expresses as MAX_MONEY (never fires on
+		// fees); a positive value refreshes on that fee delta.
+		std::int64_t fee_threshold;
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			fee_threshold = ipcFeeThreshold_ > 0 ? ipcFeeThreshold_ : 2100000000000000LL;
+		}
+
+		while (ipcRunning_) {
+			auto client = ipc::Client::connect(ipcSocket_);
+			if (!client) {
+				mkpool::Logger::warn("[Generator] mining IPC {} unreachable; retrying in 5s", ipcSocket_);
+				interruptible_sleep(5s);
+				continue;
+			}
+			mkpool::Logger::info("[Generator] Connected to bitcoin-node mining IPC {}", ipcSocket_);
+
+			// Establish the initial tip, retrying while the node is not yet ready
+			// to mine (e.g. still completing initial block download).
+			ipc::Tip tip;
+			while (ipcRunning_ && !client->get_tip(tip)) {
+				client->reconnect();
+				interruptible_sleep(1s);
+			}
+			if (!ipcRunning_)
+				break;
+			mkpool::Logger::info("[Generator] IPC initial tip {} height {}", tip.hash.substr(0, 16), tip.height);
+
+			// Publish the live connection so ipcSubmitSolution() (share worker
+			// thread) can submit solved blocks over IPC. Retired below before the
+			// connection is dropped.
+			{
+				std::lock_guard<std::mutex> lk(ipcSubmitMtx_);
+				ipcClient_ = client;
+			}
+
+			if (!tmpl_mode) {
+				// Notifications only: work still comes from getblocktemplate; IPC
+				// waitTipChanged just triggers a refresh on each new block. Short
+				// windows so shutdown is noticed promptly.
+				gbt_fallback();
+				while (ipcRunning_) {
+					ipc::Tip nt;
+					if (client->wait_tip_changed(tip.hash, 3000.0, nt)) {
+						tip = nt;
+						mkpool::Logger::info("[Generator] IPC new tip {} height {}", nt.hash.substr(0, 16), nt.height);
+						gbt_fallback();
+					} else if (!client->ok()) {
+						if (!client->reconnect())
+							break;    // transport gone -> rebuild from the outer loop
+					}
+				}
+			} else {
+				// Template mode: source templates over IPC. createNewBlock for the
+				// first, then waitNext(feeThreshold) which returns a fresh template
+				// on a mempool fee rise or a new tip (short windows for prompt
+				// shutdown). Any shortfall falls back to a GBT poll for that round.
+				std::uint64_t cur = 0;
+				{
+					ipc::Template t;
+					if (client->get_template(t) && publish(t)) cur = t.handle;
+					else gbt_fallback();
+				}
+				while (ipcRunning_) {
+					ipc::Template t;
+					const bool got = cur ? client->wait_next(cur, fee_threshold, 5000.0, t)
+					                     : client->get_template(t);
+					if (got) {
+						if (publish(t)) cur = t.handle;
+						// Unusable template -> fall back to GBT and reacquire. Throttle
+						// here: get_template returns immediately, so without a sleep this
+						// branch would busy-loop (spinning GBT) for as long as templates
+						// stay unusable.
+						else { gbt_fallback(); cur = 0; interruptible_sleep(2s); }
+					} else if (!client->ok()) {
+						if (!client->reconnect())
+							break;    // transport gone -> rebuild from the outer loop
+						cur = 0;
+					} else if (cur == 0) {
+						interruptible_sleep(500ms);         // connected but no template yet
+					}
+					// else: waitNext timed out with a live template -> re-wait
+				}
+			}
+
+			// Retire the connection: unpublish it, then release capnp on this
+			// owning thread so the client's destruction (at the next iteration or
+			// on return) is a safe no-op even if a share worker still holds a ref.
+			{
+				std::lock_guard<std::mutex> lk(ipcSubmitMtx_);
+				ipcClient_.reset();
+			}
+			client->shutdown();
+		}
+	}
+#endif // HAVE_CAPNP
 
 } // namespace mkpool

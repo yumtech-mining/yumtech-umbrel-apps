@@ -2,7 +2,7 @@ manifestVersion: "1.0.0"
 id: yumtech
 category: bitcoin
 name: YUMTECH
-version: "0.3.0"
+version: "0.4.0"
 icon: "https://raw.githubusercontent.com/yumtech-mining/yumtech-umbrel-apps/main/yumtech/icon.png"
 tagline: Bağımsız Bitcoin solo madencilik altyapısı
 description: >-
@@ -19,7 +19,7 @@ description: >-
   Round Effort, bulunan bloklar ve bağlı Bitcoin node'unun durumunu tek merkezden,
   salt okunur operasyon ekranıyla izlemeyi sağlar.
 releaseNotes: >-
-  Temiz YUMTECH uygulama kimliği ve Raspberry Pi ARM64 düzeltmesi yayımlandı.
+  Bitcoin Core mining IPC desteği ve otomatik RPC/ZMQ geri dönüşü eklendi.
 developer: YUMTECH MADENCİLİK A.Ş
 website: https://github.com/yumtech-mining/yumtech-umbrel-apps
 dependencies:

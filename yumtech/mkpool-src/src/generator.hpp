@@ -29,8 +29,14 @@
 #include <memory>
 #include <mutex>
 #include <chrono>
+#include <thread>
+#include <atomic>
+#include <vector>
+#include <cstdint>
 
 namespace mkpool {
+
+namespace ipc { class Client; } // Bitcoin Core mining IPC handle (forward decl)
 
 	using BlockTemplateCallback = std::function<void(const nlohmann::json& blockTemplate)>;
 	using BlockSubmissionCallback = std::function<void(const nlohmann::json& response)>;
@@ -67,6 +73,26 @@ namespace mkpool {
 			zmqEndpointsRawtx_ = rawtx;
 		}
 
+		// Bitcoin Core mining IPC block-notification source (BTC only). When set
+		// (and the binary was built with -DMKPOOL_ENABLE_IPC), block updates are
+		// driven by the node's Cap'n Proto mining interface instead of ZMQ; the
+		// GBT poll remains as a backstop. Empty (default) => ZMQ/RPC as before.
+		void setIpcSocket(std::string socket, bool useTemplate = false, std::int64_t feeThreshold = 0)
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			ipcSocket_ = std::move(socket);
+			ipcTemplate_ = useTemplate;
+			ipcFeeThreshold_ = feeThreshold;
+		}
+
+		// Submit a solved coinbase for an IPC-sourced job (job->ipc_handle != 0)
+		// over the node's mining IPC. Thread-safe (marshaled onto the IPC loop
+		// thread). Returns false when IPC is unavailable so the caller keeps the
+		// submitblock path. Inert on a build without IPC support.
+		bool ipcSubmitSolution(std::uint64_t handle, std::uint32_t version,
+			std::uint32_t timestamp, std::uint32_t nonce,
+			const std::vector<std::uint8_t>& coinbase, bool& accepted);
+
 	private:
 		void pollBlockTemplate();
 		void handleBlockTemplate(const boost::system::error_code& ec, const nlohmann::json& templateJson, bool fromPoll = true);
@@ -79,6 +105,13 @@ namespace mkpool {
 		void handleZMQMessage(const std::string& topic, const std::string& data);
 		void startZMQ();
 		void startRPCPolling();
+#ifdef HAVE_CAPNP
+		// IPC block-notification driver. Runs on its own thread, waits on the
+		// node's mining tip and posts a template refresh to io_context_ on each
+		// change, reconnecting transparently if bitcoind restarts.
+		void startIpcNotify();
+		void ipcNotifyLoop();
+#endif
 
 		// ZMQ watchdog to fallback when silent/errored
 		void scheduleZmqWatchdog();
@@ -120,6 +153,21 @@ namespace mkpool {
 		// Aux merged mining
 		std::shared_ptr<bitcoin::BitcoinClient> auxClient_{nullptr};
 		std::string auxPayoutAddress_;
+
+		// Bitcoin Core mining IPC. ipcSocket_ is honoured only on a build with
+		// IPC support; the notify thread/flag exist only in that build.
+		std::string ipcSocket_;
+		bool ipcTemplate_{false};       // build templates over IPC vs notifications-only
+		std::int64_t ipcFeeThreshold_{0};
+#ifdef HAVE_CAPNP
+		std::thread ipcThread_;
+		std::atomic<bool> ipcRunning_{false};
+		// The live IPC connection, published by the notify thread while connected.
+		// submit_solution() is thread-safe, so ipcSubmitSolution() copies this
+		// under ipcSubmitMtx_ and calls it without holding the lock.
+		std::mutex ipcSubmitMtx_;
+		std::shared_ptr<ipc::Client> ipcClient_;
+#endif
 	};
 
 	using GeneratorPtr = std::shared_ptr<Generator>;

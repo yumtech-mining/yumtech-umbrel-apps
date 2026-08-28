@@ -17,7 +17,7 @@ if(POLICY CMP0167)
 endif()
 
 project(mkpool
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "Modern high-performance Bitcoin/BCH mining pool (Stratum V1, SV2-ready)"
     LANGUAGES CXX C
 )
@@ -44,6 +44,7 @@ option(MKPOOL_ENABLE_ASAN    "Enable AddressSanitizer (debug only - kills perf)"
 option(MKPOOL_ENABLE_TSAN    "Enable ThreadSanitizer (debug only - kills perf)"  OFF)
 option(MKPOOL_ENABLE_UBSAN   "Enable UndefinedBehaviorSanitizer (debug only)"    OFF)
 option(MKPOOL_NATIVE         "Build with -march=native (non-portable binary)"    ON)
+option(MKPOOL_ENABLE_IPC     "Bitcoin Core mining IPC template source (BTC only)" OFF)
 
 add_compile_options(
     -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor
@@ -142,6 +143,20 @@ pkg_check_modules(PQXX   REQUIRED IMPORTED_TARGET libpqxx)
 pkg_check_modules(ZMQ    REQUIRED IMPORTED_TARGET libzmq>=4.3)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 pkg_check_modules(SECP256K1 REQUIRED IMPORTED_TARGET libsecp256k1)
+
+# Optional Bitcoin Core mining IPC transport. Generated Cap'n Proto stubs are
+# reproducible from src/ipc/schemas with scripts/gen-ipc-stubs.sh.
+if(MKPOOL_ENABLE_IPC)
+    find_package(CapnProto CONFIG REQUIRED)
+    file(GLOB MKPOOL_IPC_GEN_SOURCES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ipc/gen/*.capnp.c++
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ipc/gen/mp/*.capnp.c++)
+    if(NOT MKPOOL_IPC_GEN_SOURCES)
+        message(FATAL_ERROR
+            "MKPOOL_ENABLE_IPC=ON but no stubs exist in src/ipc/gen/. "
+            "Run scripts/gen-ipc-stubs.sh first.")
+    endif()
+endif()
 
 # ------------------------------------------------------------------
 # FetchContent third-party
@@ -300,6 +315,15 @@ if(MKPOOL_ENABLE_METRICS)
 endif()
 if(MKPOOL_ENABLE_TLS)
     target_compile_definitions(mkpool_core PUBLIC MKPOOL_HAS_TLS=1)
+endif()
+
+if(MKPOOL_ENABLE_IPC)
+    target_sources(mkpool_core PRIVATE src/ipc_mining.cpp ${MKPOOL_IPC_GEN_SOURCES})
+    target_include_directories(mkpool_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ipc/gen)
+    target_link_libraries(mkpool_core PUBLIC
+        CapnProto::capnp-rpc CapnProto::capnp CapnProto::kj-async CapnProto::kj)
+    target_compile_definitions(mkpool_core PUBLIC HAVE_CAPNP=1)
+    set_source_files_properties(${MKPOOL_IPC_GEN_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 
 # ------------------------------------------------------------------

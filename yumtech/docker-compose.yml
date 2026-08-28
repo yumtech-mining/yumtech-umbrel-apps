@@ -70,11 +70,19 @@ services:
       BITCOIN_ZMQ_HASHBLOCK_PORT: ${APP_BITCOIN_ZMQ_HASHBLOCK_PORT}
       BITCOIN_ZMQ_RAWBLOCK_PORT: ${APP_BITCOIN_ZMQ_RAWBLOCK_PORT}
 
+      # Optional Bitcoin Core v30+ multiprocess mining IPC. Empty keeps the
+      # existing RPC/ZMQ path. Operators may expose a node socket in the shared
+      # directory and set this to /run/bitcoin-ipc/node.sock.
+      BITCOIN_IPC_SOCKET: ${BITCOIN_IPC_SOCKET:-}
+      BITCOIN_IPC_TEMPLATE: ${BITCOIN_IPC_TEMPLATE:-true}
+      BITCOIN_IPC_FEE_THRESHOLD: ${BITCOIN_IPC_FEE_THRESHOLD:-0}
+
     volumes:
       - ${APP_DATA_DIR}/data/mkpool:/data
       - ${APP_DATA_DIR}/data/runtime:/run/mkpool
       - ${APP_DATA_DIR}/secrets:/data/secrets
       - ${APP_DATA_DIR}/data/public:/data/public
+      - ${APP_DATA_DIR}/data/bitcoin-ipc:/run/bitcoin-ipc:ro
       - ${APP_DATA_DIR}/data/dashboard-runtime:/opt/yumtech/dashboard-runtime:ro
       - ${APP_DATA_DIR}/data/dashboard-runtime/generate_pool_config.py:/opt/yumtech/scripts/generate-config.py:ro
 

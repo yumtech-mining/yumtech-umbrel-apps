@@ -90,6 +90,13 @@ struct BlockTemplate {
 
     // Litecoin MWEB extension block data
     std::string  mweb;
+
+    // Bitcoin Core mining IPC extension. When ipc_branch is non-empty
+    // the template came over IPC: the coinbase merkle branch is node-precomputed
+    // (skip build_branch_le_hex) and the transactions carry no txid. ipc_handle
+    // identifies the node-side BlockTemplate for a future submitSolution path.
+    std::vector<std::string> ipc_branch;
+    std::uint64_t            ipc_handle{0};
 };
 
 // Per-broadcast job (immutable once published).
@@ -150,6 +157,11 @@ struct MiningJob {
     // Litecoin MWEB extension block data
     std::string  mweb;
 
+    // Bitcoin Core mining IPC: non-zero when this job was built from an
+    // IPC template. Reserved for the submitSolution path; the current submit path
+    // assembles and broadcasts the block via submitblock as usual.
+    std::uint64_t ipc_handle{0};
+
     // Pre-formatted job-common parts of the mining.notify frame. The per-
     // session emit only does `notify_prefix + cb2 + notify_suffix`, which is
     // an O(1) memcpy chain instead of a 9-arg fmt::format. Critical when
@@ -173,6 +185,21 @@ public:
     void setCoinConfig(const CoinConfig& cc);
     void registerCallback(WorkUpdateCallback cb);
     void updateWork(const nlohmann::json& gbt);
+
+    // Optional block-submit hook for IPC-sourced jobs. Set once at
+    // startup by PoolManager to forward to Generator::ipcSubmitSolution; the
+    // submit path calls ipcSubmit() for jobs carrying a MiningJob::ipc_handle.
+    // Set-before-start and never changed, so it is read lock-free by sessions.
+    using IpcSubmitFn = std::function<bool(std::uint64_t handle, std::uint32_t version,
+        std::uint32_t timestamp, std::uint32_t nonce,
+        const std::vector<std::uint8_t>& coinbase, bool& accepted)>;
+    void setIpcSubmit(IpcSubmitFn fn) { ipc_submit_ = std::move(fn); }
+    bool ipcSubmit(std::uint64_t handle, std::uint32_t version, std::uint32_t timestamp,
+        std::uint32_t nonce, const std::vector<std::uint8_t>& coinbase, bool& accepted) const
+    {
+        if (!ipc_submit_ || handle == 0) return false;
+        return ipc_submit_(handle, version, timestamp, nonce, coinbase, accepted);
+    }
 
     [[nodiscard]] JobPtr latestJob() const { return jobs_.latest().value_or(nullptr); }
     [[nodiscard]] JobPtr findJob(std::string_view id) const { return jobs_.find(id).value_or(nullptr); }
@@ -206,6 +233,7 @@ private:
     mutable std::mutex mu_;
     CoinConfig coin_{};
     std::vector<WorkUpdateCallback> callbacks_;
+    IpcSubmitFn ipc_submit_;   // set once at startup; read lock-free by sessions
     JobWindow<JobPtr> jobs_;
     std::string last_prevhash_;
     std::atomic<std::uint32_t> version_mask_{0x1fffe000u};

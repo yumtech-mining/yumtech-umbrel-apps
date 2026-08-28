@@ -95,6 +95,15 @@ cfg = {
     }
 }
 
+ipc_socket = os.environ.get("BITCOIN_IPC_SOCKET", "").strip()
+if ipc_socket:
+    ipc_template = os.environ.get("BITCOIN_IPC_TEMPLATE", "true").strip().lower()
+    cfg["coins"]["BTC"]["ipc"] = {
+        "socket": ipc_socket,
+        "template": ipc_template not in {"0", "false", "no", "off"},
+        "feeThreshold": int(os.environ.get("BITCOIN_IPC_FEE_THRESHOLD", "0")),
+    }
+
 os.makedirs("/data", exist_ok=True)
 
 with open("/data/config.json", "w") as f:
