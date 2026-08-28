@@ -30,7 +30,7 @@ services:
 
 
   mkpool:
-    image: ghcr.io/yumtech-mining/yumtech@sha256:7db4957fcca3b810ea8474375e24621c43c26111e74b5867580c99d2dc47e4c3
+    image: ghcr.io/yumtech-mining/yumtech@sha256:4faae025c23f2652aee3ff185465e59abb3e1e9058133bb43a4352c51005b047
     restart: on-failure
     stop_grace_period: 30s
 
@@ -88,7 +88,7 @@ services:
 
 
   dashboard:
-    image: ghcr.io/yumtech-mining/yumtech@sha256:7db4957fcca3b810ea8474375e24621c43c26111e74b5867580c99d2dc47e4c3
+    image: ghcr.io/yumtech-mining/yumtech@sha256:4faae025c23f2652aee3ff185465e59abb3e1e9058133bb43a4352c51005b047
     restart: on-failure
 
     command:
