@@ -1,0 +1,23 @@
+name: Validate YUMTECH mkpool
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/validate-mkpool.yml"
+      - "yumtech/Dockerfile"
+      - "yumtech/mkpool-src/**"
+      - "yumtech/scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Build IPC-enabled mkpool and run tests
+        run: docker build --target test --tag yumtech-mkpool-test yumtech

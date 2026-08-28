@@ -5,6 +5,7 @@ APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 SOURCE_DIR="${APP_ROOT}/dashboard"
 DATA_DIR="${APP_ROOT}/data"
 PUBLIC_DIR="${DATA_DIR}/public"
+BITCOIN_IPC_DIR="${DATA_DIR}/bitcoin-ipc"
 RUNTIME_DIR="${DATA_DIR}/dashboard-runtime"
 BACKUP_DIR="${DATA_DIR}/dashboard-runtime.previous"
 
@@ -26,7 +27,7 @@ for relative_path in "${required[@]}"; do
   fi
 done
 
-install -d -m 755 "${DATA_DIR}" "${PUBLIC_DIR}"
+install -d -m 755 "${DATA_DIR}" "${PUBLIC_DIR}" "${BITCOIN_IPC_DIR}"
 STAGING_DIR="$(mktemp -d "${DATA_DIR}/.dashboard-runtime.XXXXXX")"
 
 cleanup() {
@@ -56,4 +57,4 @@ mv -- "${STAGING_DIR}" "${RUNTIME_DIR}"
 STAGING_DIR=""
 
 rm -rf -- "${BACKUP_DIR}"
-printf 'YUMTECH dashboard runtime 0.3.0 installed.\n'
+printf 'YUMTECH dashboard runtime 0.4.0 installed.\n'

@@ -40,6 +40,42 @@ Node başka bir makinedeyse `host.docker.internal` yerine node'un yerel IP
 adresini girin ve `rpcallowip` değerini yalnızca YUMTECH sunucusunun IP'siyle
 sınırlayın.
 
+## Bitcoin Core mining IPC (isteğe bağlı)
+
+YUMTECH imajı Bitcoin Core'un Cap'n Proto tabanlı mining IPC arayüzüyle
+derlenir. IPC etkin olduğunda blok şablonları ve yeni blok bildirimleri Unix
+soketi üzerinden alınır; bulunan blok `submitSolution` ile gönderilir. RPC
+`submitblock` yolu yedek olarak açık kalır ve node soketi kaybolursa havuz RPC
+üzerinden çalışmayı sürdürür.
+
+Bu özellik yalnızca multiprocess desteğiyle derlenmiş Bitcoin Core 30 veya daha
+yeni bir `bitcoin` çalıştırılabilir dosyası içindir. Tek süreçli `bitcoind` ve
+standart Umbrel/Knots kurulumu mevcut RPC/ZMQ yolunu kullanmaya devam eder.
+
+Linux node'u YUMTECH ile aynı makinedeyse örnek başlatma parametresi:
+
+```bash
+bitcoin -m node -ipcbind=unix:/var/lib/yumtech/bitcoin-ipc/node.sock
+```
+
+Ardından `/opt/yumtech/.env` içinde aşağıdaki değeri ayarlayın ve YUMTECH'i
+güncelleyin:
+
+```ini
+BITCOIN_IPC_SOCKET='/run/bitcoin-ipc/node.sock'
+BITCOIN_IPC_TEMPLATE='true'
+BITCOIN_IPC_FEE_THRESHOLD='0'
+```
+
+```bash
+sudo yumtech update
+```
+
+`BITCOIN_IPC_FEE_THRESHOLD=0` yalnızca yeni zincir ucunda şablon yeniler.
+Pozitif bir satoshi değeri girilirse mempool ücretleri bu eşik kadar arttığında
+IPC yeni şablon üretir. RPC bilgilerini IPC kullanırken de kaldırmayın; yedek
+teslim ve dashboard node verileri için gereklidir.
+
 ## Yönetim komutları
 
 ```bash

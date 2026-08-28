@@ -16,6 +16,7 @@ add_executable(mkpool_tests
     test_sv2_framing.cpp
     test_stratum_v1_hostile.cpp
     test_concurrency_stress.cpp
+    test_ipc_config.cpp
 )
 
 target_link_libraries(mkpool_tests

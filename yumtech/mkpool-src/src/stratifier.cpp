@@ -121,6 +121,17 @@ std::optional<BlockTemplate> Stratifier::parseTemplate(const nlohmann::json& gbt
         }
     }
 
+    // Bitcoin Core mining IPC: a node-precomputed coinbase merkle
+    // branch and the template handle, injected by the Generator. When present,
+    // the transactions below carry only "data" (no "txid"), so the txid gate is
+    // relaxed and the branch is used verbatim instead of build_branch_le_hex.
+    if (r.contains("mkpool_ipc_branch") && r["mkpool_ipc_branch"].is_array()) {
+        for (const auto& e : r["mkpool_ipc_branch"])
+            if (e.is_string()) bt.ipc_branch.push_back(e.get<std::string>());
+    }
+    bt.ipc_handle = r.value("mkpool_ipc_handle", std::uint64_t{0});
+    const bool ipc_template = !bt.ipc_branch.empty();
+
     if (r.contains("transactions") && r["transactions"].is_array()) {
         bt.transactions.reserve(r["transactions"].size());
         for (const auto& jt : r["transactions"]) {
@@ -138,7 +149,10 @@ std::optional<BlockTemplate> Stratifier::parseTemplate(const nlohmann::json& gbt
             tx.fee     = jt.value("fee",    std::int64_t{0});
             tx.sigops  = jt.value("sigops", 0);
             tx.weight  = jt.value("weight", 0);
-            if (tx.txid_le.empty()) continue;
+            // With an IPC-precomputed branch the txid is absent and unnecessary;
+            // keep the transaction data for block assembly. Otherwise a missing
+            // txid means we cannot place the tx in the merkle tree, so skip it.
+            if (tx.txid_le.empty() && !ipc_template) continue;
             bt.transactions.push_back(std::move(tx));
         }
     }
@@ -232,11 +246,16 @@ void Stratifier::updateWork(const nlohmann::json& gbt) {
     txid_le.reserve(bt.transactions.size());
     for (const auto& tx : bt.transactions) txid_le.push_back(tx.txid_le);
     std::vector<std::string> branch;
-    try {
-        branch = merkle::build_branch_le_hex(txid_le);
-    } catch (const std::exception& e) {
-        spdlog::error("[Stratifier] merkle branch error: {}", e.what());
-        return;
+    if (!bt.ipc_branch.empty()) {
+        // Node-precomputed coinbase merkle path (Bitcoin Core mining IPC).
+        branch = bt.ipc_branch;
+    } else {
+        try {
+            branch = merkle::build_branch_le_hex(txid_le);
+        } catch (const std::exception& e) {
+            spdlog::error("[Stratifier] merkle branch error: {}", e.what());
+            return;
+        }
     }
 
     // ---------- assemble MiningJob ----------
@@ -284,6 +303,7 @@ void Stratifier::updateWork(const nlohmann::json& gbt) {
     mj.aux_coinbasevalue    = bt.aux_coinbasevalue;
     mj.aux_target           = bt.aux_target;
     mj.mweb                 = bt.mweb;
+    mj.ipc_handle           = bt.ipc_handle;
 
     mj.tx_hexes.reserve(bt.transactions.size());
     for (auto& tx : bt.transactions) mj.tx_hexes.push_back(std::move(tx.data));

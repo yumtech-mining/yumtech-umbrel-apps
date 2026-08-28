@@ -52,6 +52,9 @@ services:
       BITCOIN_ZMQ_HOST: ${BITCOIN_ZMQ_HOST}
       BITCOIN_ZMQ_HASHBLOCK_PORT: ${BITCOIN_ZMQ_HASHBLOCK_PORT}
       BITCOIN_ZMQ_RAWBLOCK_PORT: ${BITCOIN_ZMQ_RAWBLOCK_PORT}
+      BITCOIN_IPC_SOCKET: ${BITCOIN_IPC_SOCKET:-}
+      BITCOIN_IPC_TEMPLATE: ${BITCOIN_IPC_TEMPLATE:-true}
+      BITCOIN_IPC_FEE_THRESHOLD: ${BITCOIN_IPC_FEE_THRESHOLD:-0}
       SV2_PRIVATE_KEY_FILE: /data/secrets/sv2-authority-private.hex
       SV2_PUBLIC_KEY_FILE: /data/public/sv2-authority-public.hex
       SV2_FINGERPRINT_FILE: /data/public/sv2-authority-fingerprint.txt
@@ -60,6 +63,7 @@ services:
       - "${YUMTECH_DATA_DIR}/runtime:/run/mkpool"
       - "${YUMTECH_DATA_DIR}/secrets:/data/secrets"
       - "${YUMTECH_DATA_DIR}/public:/data/public"
+      - "${YUMTECH_DATA_DIR}/bitcoin-ipc:/run/bitcoin-ipc:ro"
     healthcheck:
       test:
         - CMD

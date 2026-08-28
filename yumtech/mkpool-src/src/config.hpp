@@ -217,6 +217,17 @@ struct CoinConfig {
     std::string zmqAddress{"tcp://127.0.0.1:28332"}; // legacy single
     ZmqTopics zmq;
 
+    // Bitcoin Core mining IPC (BTC only). When ipcSocket is set and the node
+    // exposes it (bitcoin-node -ipcbind), block-change notifications and, later,
+    // block templates are sourced over the Cap'n Proto mining interface instead
+    // of ZMQ + getblocktemplate. Absent or unreachable => the ZMQ/RPC path runs
+    // unchanged. Silently ignored on non-Bitcoin chains (the interface is a
+    // Bitcoin Core v30/v31 feature; no fork ships it). Requires a build with
+    // -DMKPOOL_ENABLE_IPC=ON; otherwise these fields are inert.
+    std::string  ipcSocket;            // e.g. "/home/bitcoin/.bitcoin/node.sock"; empty = disabled
+    bool         ipcTemplate{false};   // also build templates over IPC; false = notifications only
+    std::int64_t ipcFeeThreshold{0};   // sats: waitNext refreshes the template when mempool fees rise by this much; 0 = tip-change only
+
     // Stratum
     std::string  stratumListenAddress{"0.0.0.0"};
     std::uint16_t stratumListenPort{3333};
@@ -496,6 +507,12 @@ struct Config {
             if (z.contains("hashblock")) cc.zmq.hashblock = parseList(z["hashblock"]);
             if (z.contains("rawblock"))  cc.zmq.rawblock  = parseList(z["rawblock"]);
             if (z.contains("rawtx"))     cc.zmq.rawtx     = parseList(z["rawtx"]);
+        }
+        if (j.contains("ipc") && j["ipc"].is_object()) {
+            const auto& ip = j["ipc"];
+            cc.ipcSocket       = ip.value("socket", cc.ipcSocket);
+            cc.ipcTemplate     = ip.value("template", cc.ipcTemplate);
+            cc.ipcFeeThreshold = ip.value("feeThreshold", cc.ipcFeeThreshold);
         }
         // Try nested "stratum" block
         if (j.contains("stratum") && j["stratum"].is_object()) {

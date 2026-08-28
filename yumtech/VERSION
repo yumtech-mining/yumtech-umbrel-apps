@@ -1,8 +1,10 @@
-package: 0.3.0
+package: 0.4.0
 mkpool: v.0.3.0
-mkpool commit: d2e48192abcfd0c17b43862088e575c98587f790
-dashboard: YUMTECH 0.3.0
+mkpool base commit: d2e48192abcfd0c17b43862088e575c98587f790
+mkpool IPC source: 4785cd54b27985bbba3d4f0494eeeffeb499ab9f
+dashboard: YUMTECH 0.4.0
 coinbase signature: /YUMTECH/
 database repair: persistent shares, best share and round effort
 SV1 port 3333 starting difficulty: 16384
 share display: achieved difficulty from submitted hash
+Bitcoin Core mining IPC: optional, RPC/ZMQ fallback retained
