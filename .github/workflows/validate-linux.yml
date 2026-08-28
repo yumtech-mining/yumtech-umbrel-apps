@@ -1,0 +1,44 @@
+name: Validate Linux installer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/validate-linux.yml"
+      - "install-linux.sh"
+      - "linux/**"
+  pull_request:
+    paths:
+      - ".github/workflows/validate-linux.yml"
+      - "install-linux.sh"
+      - "linux/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate installer shell syntax
+        run: |
+          bash -n install-linux.sh
+          bash -n tests/test-linux-installer.sh
+          bash -n tests/test-linux-install-e2e.sh
+
+      - name: Test installer configuration helpers
+        run: |
+          bash tests/test-linux-installer.sh
+          sudo bash tests/test-linux-install-e2e.sh
+
+      - name: Validate standalone Compose configuration
+        run: |
+          docker compose \
+            --project-name yumtech-validation \
+            --env-file linux/.env.example \
+            --file linux/docker-compose.yml \
+            config >/dev/null
