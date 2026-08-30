@@ -1,6 +1,6 @@
 [project]
 name = "yumtech-ckpool-dashboard"
-version = "1.0.1"
+version = "1.0.2"
 description = "Read-only YUMTECH dashboard for a native CKPool installation"
 requires-python = ">=3.11"
 license = {text = "MIT"}

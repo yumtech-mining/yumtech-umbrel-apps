@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Any
@@ -30,6 +31,15 @@ def integer(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def optional_metric(value: Any) -> float | None:
+    """Missing/invalid source data is not a measured zero."""
+    try:
+        result = float(value)
+        return result if math.isfinite(result) and result >= 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def truthy(value: Any, default: bool = False) -> bool:
@@ -119,7 +129,9 @@ class DashboardService:
                     stats = {
                         "dsps1": hashrate(snapshot.get("hashrate1m")) / DIFF_TO_HASHRATE,
                         "dsps5": hashrate(snapshot.get("hashrate5m")) / DIFF_TO_HASHRATE,
-                        "accepted": number(snapshot.get("accepted")),
+                        "accepted": optional_metric(snapshot.get("accepted")),
+                        "rejected": optional_metric(snapshot.get("rejected")),
+                        "round_effort_pct": optional_metric(snapshot.get("diff")),
                         "bestshare": number(snapshot.get("bestshare")),
                         "workers": integer(snapshot.get("Workers")),
                     }
@@ -237,7 +249,7 @@ class DashboardService:
                 "best_share_difficulty": best,
                 "best_share_hash": str(local_stats.get("best_hash") or ""),
                 "shares_accepted": integer(local_stats.get("accepted")),
-                "accepted_difficulty": number(persistent.get("shares")),
+                "accepted_difficulty": optional_metric(persistent.get("shares")),
                 "shares_rejected": integer(local_stats.get("rejected")),
                 "last_share_at": iso(lastshare),
                 "connected_seconds": int(now - min(starts)) if starts else 0,
@@ -268,7 +280,7 @@ class DashboardService:
                 "best_share_difficulty": best,
                 "best_share_hash": stored.get("best_hash", "") if number(stored.get("best")) == best else "",
                 "shares_accepted": stored.get("accepted"), "shares_rejected": stored.get("rejected"),
-                "accepted_difficulty": number(row.get("shares")),
+                "accepted_difficulty": optional_metric(row.get("shares")),
                 "last_share_at": iso(max(number(row.get("lastshare")), number(stored.get("last_share")))),
                 "status": "online", "status_source": "recent-share", "data_source": "status-files",
             })
@@ -312,23 +324,35 @@ class DashboardService:
         pool = self._pool()
         stats = pool.get("poolstats", {})
         node = self.node()
-        round_diff = number(stats.get("accepted")) if pool.get("metrics_available") else None
-        network_diff = number(node.get("difficulty"))
+        available = bool(pool.get("metrics_available"))
+        # CKPool add_submit() increments these by assigned difficulty, not
+        # submission count. Both counters reset with CKPool's round counters.
+        accepted = optional_metric(stats.get("accepted")) if available else None
+        rejected = optional_metric(stats.get("rejected")) if available else None
+        network_diff = optional_metric(node.get("difficulty")) if node.get("online") else None
+        effort = accepted / network_diff * 100 if accepted is not None and network_diff else None
+        if effort is None and available:
+            effort = optional_metric(stats.get("round_effort_pct"))
+        total = accepted + rejected if accepted is not None and rejected is not None else None
         output.update({
-            "round_diff": round_diff, "network_difficulty": network_diff,
-            "round_effort_pct": round_diff / network_diff * 100 if round_diff is not None and network_diff else None,
+            "round_diff": accepted, "network_difficulty": network_diff,
+            "round_effort_pct": effort,
+            "pool_accepted_diff": accepted, "pool_rejected_diff": rejected,
+            "pool_acceptance_pct": accepted / total * 100 if total else None,
+            "pool_totals_available": accepted is not None and rejected is not None,
+            "pool_totals_source": pool.get("data_source") if available else "unavailable",
         })
         return output
 
     def config(self) -> dict[str, Any]:
         config = self.settings.config
         public_key, fingerprint = sv2_public_identity(self.settings.log_path)
-        minimum = number(config.get("mindiff"), 1)
-        maximum = number(config.get("maxdiff"), 0) or 1e18
-        starting = number(config.get("startdiff"), minimum)
+        minimum = optional_metric(config.get("mindiff"))
+        maximum = optional_metric(config.get("maxdiff"))
+        starting = optional_metric(config.get("startdiff"))
         return {
             "name": "YUMTECH", "coin": "BTC", "mode": "Solo",
-            "coinbase_signature": str(config.get("btcsig") or "/YUMTECH/"),
+            "coinbase_signature": str(config.get("btcsig") or ""),
             "sv1_port": self.settings.sv1_port, "sv2_port": self.settings.sv2_port,
             "sv2_enabled": bool(config.get("sv2url")),
             "starting_difficulty": starting, "vardiff_min": minimum, "vardiff_max": maximum,

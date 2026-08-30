@@ -1,7 +1,9 @@
 import json
 import os
+import shutil
 import socket
 import struct
+import subprocess
 import tempfile
 import threading
 import time
@@ -109,12 +111,12 @@ class StatusFileTests(unittest.TestCase):
         self.write_pool()
         self.write_user()
 
-    def write_pool(self, when=None, workers=2):
+    def write_pool(self, when=None, workers=2, accepted=123456789, rejected=10, effort=0.0):
         rows = [
             {"runtime": 3600, "lastupdate": self.now if when is None else when,
              "Users": 1, "Workers": workers, "Idle": 0, "Disconnected": 5},
             {"hashrate1m": "142T", "hashrate5m": "140T", "hashrate1hr": "139T"},
-            {"diff": 0.0, "accepted": 123456789, "rejected": 10, "bestshare": 344372893, "SPS1m": 2.1},
+            {"diff": effort, "accepted": accepted, "rejected": rejected, "bestshare": 344372893, "SPS1m": 2.1},
             {"sv2": {"clients": 0}},
         ]
         self.pool.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
@@ -248,6 +250,112 @@ class StatusFileTests(unittest.TestCase):
         self.assertEqual(overview["data_source"], "socket-api")
         self.assertEqual(overview["hashrate_1m"], 2 * 2**32)
         self.assertEqual(len(service.miners()), 1)
+
+    def test_pool_diff_totals_are_not_log_submission_counts(self):
+        self.live_server()
+        service = self.service()
+        # Three accepted submissions at 16384 diff and one rejected at 32768:
+        # acceptance by diff is 60%, not the 75% submission-count ratio.
+        self.write_pool(accepted=49152, rejected=32768)
+        service.storage.insert_share({"event_key": "irrelevant-log-record", "created_at": self.now,
+                                      "accepted": True, "share_difficulty": 999999999})
+        result = service.analytics()
+        self.assertEqual(result["pool_accepted_diff"], 49152)
+        self.assertEqual(result["pool_rejected_diff"], 32768)
+        self.assertEqual(result["pool_acceptance_pct"], 60)
+        self.assertTrue(result["pool_totals_available"])
+        self.assertEqual(result["pool_totals_source"], "status-files")
+        # Subsequent snapshot must update both totals; no cached local log count.
+        self.write_pool(accepted=98304, rejected=32768)
+        service._pool(force=True)
+        updated = service.analytics()
+        self.assertEqual(updated["pool_accepted_diff"], 98304)
+        self.assertEqual(updated["pool_acceptance_pct"], 75)
+
+    def test_missing_rejected_or_stale_snapshot_does_not_invent_zero(self):
+        self.live_server()
+        service = self.service()
+        self.write_pool(rejected=None)
+        missing = service.analytics()
+        self.assertIsNone(missing["pool_rejected_diff"])
+        self.assertIsNone(missing["pool_acceptance_pct"])
+        self.assertFalse(missing["pool_totals_available"])
+        self.write_pool(self.now - FRESH_SECONDS - 5)
+        service._pool(force=True)
+        stale = service.analytics()
+        self.assertIsNone(stale["pool_accepted_diff"])
+        self.assertIsNone(stale["pool_rejected_diff"])
+        self.assertFalse(stale["pool_totals_available"])
+
+    def test_zero_counters_are_valid_but_ratio_is_undefined(self):
+        self.live_server()
+        self.write_pool(accepted=0, rejected=0)
+        result = self.service().analytics()
+        self.assertEqual(result["pool_accepted_diff"], 0)
+        self.assertEqual(result["pool_rejected_diff"], 0)
+        self.assertTrue(result["pool_totals_available"])
+        self.assertIsNone(result["pool_acceptance_pct"])
+
+    def test_round_uses_file_effort_when_rpc_is_unavailable(self):
+        self.live_server()
+        self.write_pool(effort=0.1)
+        service = self.service()
+        service.rpc = SimpleNamespace(node_data=lambda: {"online": False})
+        self.assertEqual(service.analytics()["round_effort_pct"], 0.1)
+        self.assertIsNone(service.analytics()["network_difficulty"])
+
+    def test_display_configuration_does_not_invent_missing_values(self):
+        service = self.service()
+        config = service.config()
+        self.assertIsNone(config["starting_difficulty"])
+        self.assertIsNone(config["vardiff_min"])
+        self.assertIsNone(config["vardiff_max"])
+        self.assertEqual(config["coinbase_signature"], "")
+        service.settings.config.update({"startdiff": 16384, "mindiff": 1024, "btcsig": "/CKPool/"})
+        config = service.config()
+        self.assertEqual(config["starting_difficulty"], 16384)
+        self.assertEqual(config["vardiff_min"], 1024)
+        self.assertEqual(config["coinbase_signature"], "/CKPool/")
+
+    @unittest.skipUnless(shutil.which("node"), "Node is only required for UI regression tests")
+    def test_status_files_through_http_api_to_dashboard(self):
+        from urllib.request import urlopen
+        from yumtech_dashboard.httpd import make_server
+        self.write_pool(accepted=49152, rejected=32768)
+        service = self.service()
+        # Keep the real TCP socket intact for HTTP. The native Unix framing is
+        # covered separately by StatsOnlyTransport and StatsOnlyServer tests.
+        service.ckpool = mock.Mock()
+        service.ckpool.stats.return_value = {"clients": {"count": 2}}
+        for name in ("clients", "poolstats", "workers", "uptime"):
+            getattr(service.ckpool, name).side_effect = CkpoolError("unsupported")
+        service.settings.host = "127.0.0.1"
+        service.settings.port = 0
+        service.settings.basic_auth_user = ""
+        service.settings.basic_auth_password = ""
+        service.settings.static_dir = Path(__file__).resolve().parents[1] / "yumtech_dashboard" / "static"
+        server = make_server(service)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            origin = f"http://127.0.0.1:{server.server_address[1]}"
+            def fetch(endpoint):
+                with urlopen(origin + endpoint, timeout=5) as response:
+                    return json.load(response)
+            payload = {"overview": fetch("/api/overview"), "analytics": fetch("/api/analytics"),
+                       "miners": fetch("/api/miners"), "config": fetch("/api/config")}
+            self.assertEqual(payload["analytics"]["pool_accepted_diff"], 49152)
+            self.write_pool(accepted=98304, rejected=32768)
+            service._pool(force=True)
+            payload["updated_analytics"] = fetch("/api/analytics")
+            script = Path(__file__).with_name("ui_checks.cjs")
+            result = subprocess.run([shutil.which("node"), str(script)], input=json.dumps(payload),
+                                    text=True, capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_update_preserves_existing_shares_and_log_offsets(self):
         self.live_server()

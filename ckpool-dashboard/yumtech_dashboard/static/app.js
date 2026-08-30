@@ -4,7 +4,6 @@ const state = {
   overview: {},
   analytics: {},
   miners: [],
-  shares: [],
   blocks: [],
   node: {},
   config: {},
@@ -22,6 +21,11 @@ function byId(id) { return document.getElementById(id); }
 function text(id, value) {
   const element = byId(id);
   if (element) element.textContent = value;
+}
+
+function visible(id, show) {
+  const element = byId(id);
+  if (element) element.hidden = !show;
 }
 
 function escapeHtml(value) {
@@ -186,7 +190,9 @@ function renderOverview() {
   text("connection-count", `${formatNumber(data.connections)} bağlantı`);
   text("best-share", formatDifficulty(data.best_share));
   text("block-count", formatNumber(data.blocks));
-  text("template-height", data.template_height ? `#${formatNumber(data.template_height)}` : "—");
+  text("pool-data-age", data.metrics_available === false ? "Güncel veri yok"
+    : data.data_source === "status-files" ? `Dosya · ${formatDuration(data.stats_age_seconds)} önce`
+    : data.data_source === "socket-api" ? "Canlı API" : "Veri bekleniyor");
   text("nav-worker-count", formatNumber(data.workers));
   text("miners-page-count", `${formatNumber(data.workers)} worker`);
   text("blocks-page-count", `${formatNumber(data.blocks)} blok`);
@@ -196,30 +202,24 @@ function renderAnalytics() {
   const data = state.analytics;
   text("average-hashrate", formatHashrate(data.avg_hashrate_6h));
   text("peak-hashrate", formatHashrate(data.peak_hashrate_6h));
-  text("last-share-time", formatAgo(data.last_share_at));
   text("round-diff", formatDifficulty(data.round_diff));
   text("network-diff", formatDifficulty(data.network_difficulty));
   const effort = Math.max(0, finite(data.round_effort_pct));
+  visible("round-effort-card", data.round_effort_pct != null);
   const effortLabel = effort < .01 ? effort.toFixed(5) : effort < 1 ? effort.toFixed(3) : effort.toFixed(2);
   text("round-effort", data.round_effort_pct == null ? "—" : `${effortLabel}%`);
   const effortDegrees = Math.min(effort, 100) * 3.6;
   byId("effort-ring")?.style.setProperty("background", `conic-gradient(var(--lime) ${effortDegrees}deg, #edf0ee ${effortDegrees}deg)`);
 
-  const accepted = finite(data.accepted_1h);
-  const rejected = finite(data.rejected_1h);
-  const total = accepted + rejected;
-  const rate = total > 0 ? accepted / total * 100 : 0;
-  text("accepted-1h", formatNumber(accepted));
-  text("rejected-1h", formatNumber(rejected));
-  text("accept-rate", total ? `${rate.toFixed(2)}%` : "—");
-  byId("quality-accepted")?.style.setProperty("width", `${Math.max(0, Math.min(100, rate))}%`);
-
-  text("shares-accepted-1h", formatNumber(data.accepted_1h));
-  text("shares-rejected-1h", formatNumber(data.rejected_1h));
-  text("shares-accepted-24h", formatNumber(data.accepted_24h));
-  text("shares-rejected-24h", formatNumber(data.rejected_24h));
-  text("shares-accepted-diff", `${formatDifficulty(data.accepted_diff_1h)} diff`);
-  text("shares-rejected-diff", `${formatDifficulty(data.rejected_diff_1h)} diff`);
+  visible("pool-totals-card", data.pool_totals_available === true);
+  text("pool-accepted-diff", formatDifficulty(data.pool_accepted_diff));
+  text("pool-rejected-diff", formatDifficulty(data.pool_rejected_diff));
+  byId("pool-accepted-diff")?.setAttribute("title", `${formatNumber(data.pool_accepted_diff)} diff`);
+  byId("pool-rejected-diff")?.setAttribute("title", `${formatNumber(data.pool_rejected_diff)} diff`);
+  const rate = data.pool_acceptance_pct;
+  text("pool-acceptance-rate", rate == null ? "—" : `${finite(rate).toFixed(3)}%`);
+  byId("pool-accepted-bar")?.style.setProperty("width", `${Math.max(0, Math.min(100, finite(rate)))}%`);
+  text("pool-totals-source", `${data.pool_totals_source === "status-files" ? "pool.status" : "CKPool API"} · CKPool sayaçlarının son sıfırlanmasından itibaren. Saatlik adet değildir.`);
 }
 
 function filteredMiners() {
@@ -229,9 +229,6 @@ function filteredMiners() {
   return onlineMiners.filter((miner) => [
     miner.worker_name,
     miner.btc_address,
-    miner.user_agent,
-    miner.protocol,
-    miner.ip,
   ].some((value) => String(value || "").toLowerCase().includes(query)));
 }
 
@@ -240,76 +237,29 @@ function renderMiners() {
   const table = byId("miners-table");
   const online = state.miners.filter((miner) => miner.status === "online").length;
   const activity = state.miners.some((miner) => miner.status_source === "recent-share") ? "aktif" : "çevrimiçi";
+  text("miners-source-note", state.overview.data_source === "status-files" || activity === "aktif"
+    ? "Son 3 dakikada share gönderen worker’lar · Dosyalar yaklaşık dakikada bir yenilenir"
+    : "CKPool worker istatistikleri");
   setBadge(byId("miners-table-status"), `${online} ${activity}`, online ? "" : "muted");
   if (!table) return;
 
   if (!rows.length) {
-    table.innerHTML = '<tr><td colspan="8"><div class="empty-state">Eşleşen çevrimiçi madenci bulunamadı.</div></td></tr>';
+    table.innerHTML = '<tr><td colspan="6"><div class="empty-state">Eşleşen aktif madenci bulunamadı.</div></td></tr>';
     return;
   }
 
   table.innerHTML = rows.map((miner) => {
-    const accepted = miner.shares_accepted;
-    const rejected = miner.shares_rejected;
     const onlineTone = miner.status === "online" ? "" : "muted";
     const inferred = miner.status_source === "recent-share";
     const status = inferred ? "AKTİF" : miner.status === "online" ? "ONLINE" : "OFFLINE";
-    const agent = `<small title="${escapeHtml(miner.user_agent || miner.btc_address)}">${escapeHtml(shortHash(miner.btc_address, 16, 10))}</small>`;
+    const agent = `<small title="${escapeHtml(miner.btc_address)}">${escapeHtml(shortHash(miner.btc_address, 16, 10))}</small>`;
     return `<tr>
       <td><div class="worker-cell"><span class="worker-avatar">${escapeHtml(initials(miner.worker_name))}</span><div><strong>${escapeHtml(miner.worker_name || "worker")}</strong>${agent}</div></div></td>
       <td><span class="status-badge ${onlineTone}" title="${inferred ? 'Son 3 dakikadaki paylaşım etkinliğine göre; anlık bağlantı listesi değil' : 'Canlı bağlantı'}">${status}</span></td>
-      <td><strong>${escapeHtml(miner.protocol || "—")}</strong><div class="muted-text">${formatNumber(miner.connections)} bağlantı</div></td>
       <td><strong>${formatHashrate(miner.hashrate)}</strong><div class="muted-text">5dk ${formatHashrate(miner.hashrate_5m)}</div></td>
-      <td><strong>${formatDifficulty(miner.difficulty)}</strong></td>
-      <td><strong>${formatDifficulty(miner.best_share_difficulty)}</strong><div class="muted-text mono" title="${escapeHtml(miner.best_share_hash)}">${escapeHtml(shortHash(miner.best_share_hash, 7, 5))}</div></td>
-      <td><span class="good-text">${formatNumber(accepted)}</span> / <span class="danger-text">${formatNumber(rejected)}</span></td>
-      <td><strong>${escapeHtml(formatAgo(miner.last_share_at))}</strong><div class="muted-text">${miner.connected_seconds ? escapeHtml(formatDuration(miner.connected_seconds)) : "—"}</div></td>
-    </tr>`;
-  }).join("");
-}
-
-function filteredShares() {
-  const query = state.query.trim().toLowerCase();
-  if (!query) return state.shares;
-  return state.shares.filter((share) => [share.worker_name, share.btc_address, share.client_id, share.job_id, share.share_hash]
-    .some((value) => String(value || "").toLowerCase().includes(query)));
-}
-
-function renderShareFeed() {
-  const feed = byId("overview-share-feed");
-  if (!feed) return;
-  const rows = state.shares.slice(0, 6);
-  if (!rows.length) {
-    feed.innerHTML = '<div class="empty-state">Share bekleniyor…</div>';
-    return;
-  }
-  feed.innerHTML = rows.map((share) => `<div class="feed-row">
-    <i class="feed-result ${share.block_found ? "block" : share.accepted ? "" : "rejected"}"></i>
-    <span class="feed-worker"><strong>${escapeHtml(share.worker_name || "worker")}</strong><small>${share.block_found ? "Blok bulundu" : share.accepted ? "Accepted share" : "Rejected share"}</small></span>
-    <strong class="feed-diff">${formatDifficulty(share.share_difficulty)}</strong>
-    <time class="feed-time">${escapeHtml(formatAgo(share.created_at))}</time>
-  </div>`).join("");
-}
-
-function renderShares() {
-  renderShareFeed();
-  const table = byId("shares-table");
-  if (!table) return;
-  const rows = filteredShares();
-  if (!rows.length) {
-    table.innerHTML = '<tr><td colspan="6"><div class="empty-state">Eşleşen share kaydı yok.</div></td></tr>';
-    return;
-  }
-  table.innerHTML = rows.map((share) => {
-    const label = share.block_found ? "BLOCK" : share.accepted ? "ACCEPTED" : "REJECTED";
-    const tone = share.block_found ? "block" : share.accepted ? "" : "rejected";
-    return `<tr>
-      <td>${escapeHtml(new Date(share.created_at).toLocaleString("tr-TR"))}</td>
-      <td><div class="worker-cell"><span class="worker-avatar">${escapeHtml(initials(share.worker_name))}</span><div><strong>${escapeHtml(share.worker_name || "worker")}</strong><small>${escapeHtml(shortHash(share.btc_address, 12, 8))}</small></div></div></td>
-      <td><span class="result-pill ${tone}">${label}</span></td>
-      <td><strong>${formatDifficulty(share.share_difficulty)}</strong></td>
-      <td class="mono">${escapeHtml(shortHash(share.client_id || share.job_id, 8, 6))}</td>
-      <td class="mono" title="${escapeHtml(share.share_hash)}">${escapeHtml(shortHash(share.share_hash, 10, 8))}</td>
+      <td><strong>${formatDifficulty(miner.best_share_difficulty)}</strong></td>
+      <td title="${formatNumber(miner.accepted_difficulty)} diff"><strong>${formatDifficulty(miner.accepted_difficulty)}</strong></td>
+      <td><strong>${escapeHtml(formatAgo(miner.last_share_at))}</strong></td>
     </tr>`;
   }).join("");
 }
@@ -385,9 +335,6 @@ function renderNode() {
   text("node-network-hashrate", online ? formatHashrate(node.network_hashrate) : "—");
   text("node-pooled-tx", online ? formatNumber(node.pooled_transactions) : "—");
 
-  const storagePercent = Math.min(100, finite(node.size_on_disk) / (500 * 1024 ** 3) * 100);
-  byId("node-storage-fill")?.style.setProperty("width", `${storagePercent}%`);
-
   const indexes = node.indexes && typeof node.indexes === "object" ? Object.entries(node.indexes) : [];
   const indexList = byId("node-index-list");
   if (indexList) {
@@ -403,21 +350,24 @@ function renderConfig() {
   const config = state.config;
   text("config-sv1", `TCP :${config.sv1_port || 3333}`);
   text("config-sv2", config.sv2_enabled === false ? "Devre dışı" : `TCP :${config.sv2_port || 3336}`);
-  text("config-vardiff", `${formatDifficulty(config.vardiff_min)} — ${formatDifficulty(config.vardiff_max)}`);
-  text("config-share-target", `Başlangıç diff ${formatDifficulty(config.starting_difficulty)}`);
-  text("config-coinbase", config.coinbase_signature || "/YUMTECH/");
-  text("config-version-mask", config.version_rolling_mask || "1fffe000");
-  text("config-engine", config.engine || "CKPool");
-  text("config-engine-build", config.engine_build || "Native API");
-  text("hero-protocol", config.sv2_enabled === false ? `SV1 :${config.sv1_port || 3333}` : `SV1 :${config.sv1_port || 3333} + SV2 :${config.sv2_port || 3336}`);
+  visible("config-sv2-card", config.sv2_enabled === true);
+  const difficultySettings = [["Başlangıç", config.starting_difficulty], ["Min", config.vardiff_min], ["Max", config.vardiff_max]]
+    .filter(([, value]) => value != null);
+  visible("config-difficulty-card", difficultySettings.length > 0);
+  text("config-difficulty", difficultySettings.map(([label, value]) => `${label}: ${formatDifficulty(value)}`).join(" · "));
+  visible("config-coinbase-card", Boolean(config.coinbase_signature));
+  text("config-coinbase", config.coinbase_signature || "—");
   text("sv2-port-badge", config.sv2_enabled === false ? "KAPALI" : `TCP :${config.sv2_port || 3336}`);
 
   const publicKey = String(config.sv2_public_key || "");
   const fingerprint = String(config.sv2_public_key_fingerprint || "");
+  const hasPublicKey = config.sv2_enabled === true && publicKey.length > 0;
+  visible("sv2-key-card", hasPublicKey);
+  byId("overview-top-grid")?.classList.toggle("single-column", !hasPublicKey);
   const keyElement = byId("sv2-public-key");
   const copyButton = byId("copy-sv2-key");
   if (keyElement) {
-    keyElement.textContent = publicKey || (config.sv2_enabled === false ? "Stratum V2 devre dışı" : "Public key CKPool logunda bekleniyor…");
+    keyElement.textContent = publicKey;
     keyElement.dataset.value = publicKey;
   }
   text(
@@ -433,7 +383,6 @@ function renderAll() {
   renderOverview();
   renderAnalytics();
   renderMiners();
-  renderShares();
   renderBlocks();
   renderNode();
   renderConfig();
@@ -450,7 +399,6 @@ async function refreshMain({ manual = false } = {}) {
     ["overview", "/api/overview"],
     ["analytics", "/api/analytics"],
     ["miners", "/api/miners"],
-    ["shares", "/api/shares?limit=100"],
     ["blocks", "/api/blocks"],
     ["node", "/api/node"],
     ["config", "/api/config"],
@@ -627,7 +575,6 @@ function bindEvents() {
   byId("global-search")?.addEventListener("input", (event) => {
     state.query = event.target.value;
     renderMiners();
-    renderShares();
   });
   byId("copy-sv2-key")?.addEventListener("click", async () => {
     const value = byId("sv2-public-key")?.dataset.value || "";

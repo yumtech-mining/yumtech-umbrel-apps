@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- CKPool verilerine uygun sade dashboard ve sabit başlık.
+- Havuz diff toplamları ve madenci bilgilerinin gösterimi düzeltildi.
+
 ## 1.0.1
 
 - Native CKPool sürümleriyle canlı veri uyumluluğu düzeltildi.

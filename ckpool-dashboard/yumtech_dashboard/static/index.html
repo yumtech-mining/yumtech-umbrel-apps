@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071b15">
   <meta name="color-scheme" content="light">
-  <title>YUMTECH</title>
+  <title>CKPOOL DASHBOARD</title>
   <link rel="icon" type="image/png" href="/yumtech-logo.png">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=1.0.2">
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true">
@@ -35,7 +35,6 @@
       <span class="nav-title">HAVUZ</span>
       <button class="nav-link active" data-view="overview"><svg><use href="#i-dashboard"/></svg><span>Genel Bakış</span></button>
       <button class="nav-link" data-view="miners"><svg><use href="#i-miner"/></svg><span>Madenciler</span><b id="nav-worker-count">0</b></button>
-      <button class="nav-link" data-view="shares"><svg><use href="#i-share"/></svg><span>Paylaşımlar</span></button>
       <button class="nav-link" data-view="blocks"><svg><use href="#i-block"/></svg><span>Bulunan Bloklar</span></button>
 
       <span class="nav-title">ALTYAPI</span>
@@ -67,30 +66,22 @@
 
     <main class="main-content">
       <section class="view active" data-view-panel="overview">
-        <div class="yumtech-marquee" aria-label="YUMTECH karşılama mesajı">
-          <div class="marquee-track">
-            <span>YUMTECH MADENCİLİK A.Ş</span>
-            <span>HOŞ GELDİNİZ</span>
-          </div>
-        </div>
-
         <div class="page-heading">
-          <div><span class="eyebrow">SOLO MINING CONTROL CENTER</span><h1>Genel Bakış</h1><p>Madencilik performansı, paylaşımlar ve node durumu tek ekranda.</p></div>
-          <div class="heading-chip"><span class="live-dot"></span><span><small>Güncel blok şablonu</small><strong id="template-height">—</strong></span></div>
+          <div><span class="eyebrow">GENEL BAKIŞ</span><h1 class="dashboard-title">CKPOOL DASHBOARD</h1><p>Havuz performansı, madenciler ve node durumu.</p></div>
         </div>
 
-        <div class="overview-top-grid">
+        <div id="overview-top-grid" class="overview-top-grid single-column">
           <article class="hero-card hero-primary live-hashrate-banner">
-            <div class="hero-label"><span>CANLI POOL HASHRATE</span><span class="pill" id="hero-protocol">SV1 + SV2</span></div>
-            <strong id="pool-hashrate" class="hero-value">0 H/s</strong>
-            <div class="hero-footer"><span>5 dk <b id="pool-hashrate-5m">0 H/s</b></span><span>Uptime <b id="pool-uptime">—</b></span></div>
+            <div class="hero-label"><span>POOL HASHRATE · 1 DK</span><span class="pill" id="pool-data-age">Veri bekleniyor</span></div>
+            <strong id="pool-hashrate" class="hero-value">—</strong>
+            <div class="hero-footer"><span>5 dk <b id="pool-hashrate-5m">—</b></span><span>Uptime <b id="pool-uptime">—</b></span></div>
             <span class="hero-bitcoin">₿</span>
           </article>
 
-          <article class="card sv2-key-card">
+          <article id="sv2-key-card" class="card sv2-key-card" hidden>
             <div class="card-head compact"><div><span class="card-kicker">SECURE STRATUM</span><h2>SV2 Public Key</h2></div><span id="sv2-port-badge" class="status-badge">TCP :3336</span></div>
             <p class="sv2-key-intro">ASIC veya SV2 istemcisindeki Authority Public Key alanına bu değeri yaz.</p>
-            <code id="sv2-public-key" class="sv2-public-key">Oluşturuluyor…</code>
+            <code id="sv2-public-key" class="sv2-public-key"></code>
             <div class="sv2-key-actions"><span id="sv2-key-fingerprint">Fingerprint: —</span><button id="copy-sv2-key" type="button" disabled>KOPYALA</button></div>
             <small class="sv2-key-note">Yalnızca public key gösterilir. Private key cihazdan dışarı çıkarılmaz.</small>
           </article>
@@ -99,19 +90,19 @@
         <div class="overview-stats-grid">
           <article class="stat-card"><div class="stat-icon orange"><svg><use href="#i-miner"/></svg></div><div class="stat-copy"><span>Aktif Worker</span><strong id="active-workers">0</strong><small id="connection-count">0 bağlantı</small></div></article>
           <article class="stat-card"><div class="stat-icon green"><svg><use href="#i-share"/></svg></div><div class="stat-copy"><span>Best Share</span><strong id="best-share">0</strong><small>Tüm zamanlar rekoru</small></div></article>
-          <article class="stat-card"><div class="stat-icon dark"><svg><use href="#i-block"/></svg></div><div class="stat-copy"><span>Bulunan Blok</span><strong id="block-count">0</strong><small>Solo başarı</small></div></article>
+          <article class="stat-card"><div class="stat-icon dark"><svg><use href="#i-block"/></svg></div><div class="stat-copy"><span>Kayıtlı Blok</span><strong id="block-count">0</strong><small>CKPool blok kayıtları</small></div></article>
         </div>
 
         <div class="dashboard-grid">
           <article class="card chart-card span-2">
             <div class="card-head"><div><span class="card-kicker">PERFORMANS</span><h2>Hashrate Akışı</h2><p>Toplam hashrate geçmişi</p></div><div class="range-switch" id="history-range"><button class="active" data-hours="1">1S</button><button data-hours="6">6S</button><button data-hours="24">24S</button></div></div>
-            <div class="chart-summary"><span><small>6S Ortalama</small><strong id="average-hashrate">0 H/s</strong></span><span><small>6S Zirve</small><strong id="peak-hashrate">0 H/s</strong></span><span><small>Son Share</small><strong id="last-share-time">—</strong></span></div>
+            <div class="chart-summary"><span><small>6S Ortalama</small><strong id="average-hashrate">—</strong></span><span><small>6S Zirve</small><strong id="peak-hashrate">—</strong></span></div>
             <div class="chart-wrap"><canvas id="hashrate-chart" aria-label="Hashrate grafiği"></canvas><div id="chart-tooltip" class="chart-tooltip"><small id="chart-tooltip-time">—</small><strong id="chart-tooltip-value">—</strong></div></div>
           </article>
 
-          <article class="card effort-card">
+          <article id="round-effort-card" class="card effort-card" hidden>
             <div class="card-head"><div><span class="card-kicker">CURRENT ROUND</span><h2>Round Effort</h2><p>Ağ zorluğuna göre biriken iş</p></div></div>
-            <div class="ring-wrap"><div id="effort-ring" class="progress-ring"><div><strong id="round-effort">0.000%</strong><small>EFFORT</small></div></div></div>
+            <div class="ring-wrap"><div id="effort-ring" class="progress-ring"><div><strong id="round-effort">—</strong><small>EFFORT</small></div></div></div>
             <div class="split-stats"><span><small>Birikmiş Diff</small><strong id="round-diff">0</strong></span><span><small>Network Diff</small><strong id="network-diff">0</strong></span></div>
           </article>
 
@@ -121,29 +112,19 @@
             <div class="node-mini-grid"><span><small>Peer</small><strong id="mini-peers">—</strong></span><span><small>Mempool</small><strong id="mini-mempool">—</strong></span><span><small>Disk</small><strong id="mini-disk">—</strong></span></div>
           </article>
 
-          <article class="card shares-card span-2">
-            <div class="card-head compact"><div><span class="card-kicker">SHARE QUALITY</span><h2>Son 1 Saat</h2></div><button class="text-button" data-view-jump="shares">Tümünü gör</button></div>
-            <div class="quality-bar"><i id="quality-accepted"></i></div>
-            <div class="share-metrics"><span><small>Accepted</small><strong id="accepted-1h">0</strong></span><span><small>Rejected</small><strong id="rejected-1h">0</strong></span><span><small>Başarı</small><strong id="accept-rate">—</strong></span></div>
-          </article>
-
-          <article class="card recent-card span-full">
-            <div class="card-head compact"><div><span class="card-kicker">LIVE FEED</span><h2>Son Paylaşımlar</h2></div><span class="live-label"><i></i> CANLI</span></div>
-            <div id="overview-share-feed" class="share-feed"><div class="empty-state">Share bekleniyor…</div></div>
+          <article id="pool-totals-card" class="card pool-totals-card span-2" hidden>
+            <div class="card-head compact"><div><span class="card-kicker">BİRİKMİŞ ZORLUK</span><h2>Havuz Diff Toplamları</h2><p>CKPool sayaçları · Share adedi değildir</p></div></div>
+            <div class="quality-bar"><i id="pool-accepted-bar"></i></div>
+            <div class="pool-metrics"><span><small>Accepted Diff</small><strong id="pool-accepted-diff">—</strong></span><span><small>Rejected Diff</small><strong id="pool-rejected-diff">—</strong></span><span><small>Diff bazlı kabul oranı</small><strong id="pool-acceptance-rate">—</strong></span></div>
+            <p class="source-note" id="pool-totals-source"></p>
           </article>
 
         </div>
       </section>
 
       <section class="view" data-view-panel="miners">
-        <div class="page-heading"><div><span class="eyebrow">LIVE WORKERS</span><h1>Madenciler</h1><p>Canlı bağlantılar, vardiff, protokol ve cihaz performansı.</p></div><div class="heading-chip"><span class="live-dot"></span><span><small>Aktif</small><strong id="miners-page-count">0 worker</strong></span></div></div>
-        <article class="card table-card"><div class="table-toolbar"><div><h2>Worker Listesi</h2><p>Bağlı ASIC cihazlarının güncel performansı</p></div><span id="miners-table-status" class="status-badge muted">Hazırlanıyor</span></div><div class="table-wrap"><table><thead><tr><th>Worker / Adres</th><th>Durum</th><th>Protokol</th><th>Hashrate</th><th>Vardiff</th><th>Best Share</th><th>Accepted / Rejected</th><th>Son Share</th></tr></thead><tbody id="miners-table"><tr><td colspan="8"><div class="empty-state">Madenci bekleniyor…</div></td></tr></tbody></table></div></article>
-      </section>
-
-      <section class="view" data-view-panel="shares">
-        <div class="page-heading"><div><span class="eyebrow">SHARE ANALYTICS</span><h1>Paylaşımlar</h1><p>Accepted/rejected kalitesi ve son gönderilen işler.</p></div></div>
-        <div class="kpi-grid four"><article class="kpi"><span>Accepted / 1S</span><strong id="shares-accepted-1h">0</strong><small id="shares-accepted-diff">0 diff</small></article><article class="kpi danger"><span>Rejected / 1S</span><strong id="shares-rejected-1h">0</strong><small id="shares-rejected-diff">0 diff</small></article><article class="kpi"><span>Accepted / 24S</span><strong id="shares-accepted-24h">0</strong><small>Toplam kayıt</small></article><article class="kpi danger"><span>Rejected / 24S</span><strong id="shares-rejected-24h">0</strong><small>Toplam kayıt</small></article></div>
-        <article class="card table-card"><div class="table-toolbar"><div><h2>Son Share Kayıtları</h2><p>En yeni 100 kayıt</p></div><span class="live-label"><i></i> CANLI</span></div><div class="table-wrap"><table><thead><tr><th>Zaman</th><th>Worker</th><th>Sonuç</th><th>Share Diff</th><th>Client ID</th><th>Share Hash</th></tr></thead><tbody id="shares-table"><tr><td colspan="6"><div class="empty-state">Share bekleniyor…</div></td></tr></tbody></table></div></article>
+        <div class="page-heading"><div><span class="eyebrow">WORKER PERFORMANSI</span><h1>Madenciler</h1><p>Hashrate, best share ve son paylaşım zamanı.</p></div><div class="heading-chip"><span class="live-dot"></span><span><small>Aktif</small><strong id="miners-page-count">0 worker</strong></span></div></div>
+        <article class="card table-card"><div class="table-toolbar"><div><h2>Worker Listesi</h2><p id="miners-source-note">CKPool worker istatistikleri</p></div><span id="miners-table-status" class="status-badge muted">Hazırlanıyor</span></div><div class="table-wrap"><table><thead><tr><th>Worker / Adres</th><th>Durum</th><th>Hashrate</th><th>Best Share</th><th title="Worker dosyasındaki shares: birikmiş kabul edilen zorluk, share adedi değil">Toplam Diff</th><th>Son Share</th></tr></thead><tbody id="miners-table"><tr><td colspan="6"><div class="empty-state">Madenci bekleniyor…</div></td></tr></tbody></table></div></article>
       </section>
 
       <section class="view" data-view-panel="blocks">
@@ -158,7 +139,7 @@
           <article class="card"><div class="card-head compact"><div><span class="card-kicker">NODE</span><h2>Sürüm ve Çalışma</h2></div></div><dl class="detail-list"><div><dt>Sürüm</dt><dd id="node-version">—</dd></div><div><dt>Uptime</dt><dd id="node-uptime">—</dd></div><div><dt>Protokol</dt><dd id="node-protocol">—</dd></div><div><dt>Ağ aktif</dt><dd id="node-network-active">—</dd></div></dl></article>
           <article class="card"><div class="card-head compact"><div><span class="card-kicker">PEERS</span><h2>Bağlantılar</h2></div></div><div class="peer-total"><strong id="node-connections">0</strong><span>toplam peer</span></div><div class="peer-bars"><div><span>Gelen</span><b id="node-connections-in">0</b></div><div><span>Giden</span><b id="node-connections-out">0</b></div></div></article>
           <article class="card"><div class="card-head compact"><div><span class="card-kicker">MEMPOOL</span><h2>Bekleyen İşlemler</h2></div></div><div class="mempool-total"><strong id="node-mempool-count">0</strong><span>transaction</span></div><dl class="detail-list compact-list"><div><dt>Boyut</dt><dd id="node-mempool-bytes">—</dd></div><div><dt>Bellek</dt><dd id="node-mempool-usage">—</dd></div><div><dt>Toplam fee</dt><dd id="node-mempool-fee">—</dd></div></dl></article>
-          <article class="card"><div class="card-head compact"><div><span class="card-kicker">STORAGE</span><h2>Zincir Verisi</h2></div></div><div class="storage-meter"><div><i id="node-storage-fill"></i></div><strong id="node-disk-size">—</strong><span id="node-prune-state">—</span></div><dl class="detail-list compact-list"><div><dt>Prune height</dt><dd id="node-prune-height">—</dd></div><div><dt>Best block</dt><dd id="node-best-hash" class="mono short-value">—</dd></div></dl></article>
+          <article class="card"><div class="card-head compact"><div><span class="card-kicker">STORAGE</span><h2>Zincir Verisi</h2></div></div><div class="storage-meter"><strong id="node-disk-size">—</strong><span id="node-prune-state">—</span></div><dl class="detail-list compact-list"><div><dt>Prune height</dt><dd id="node-prune-height">—</dd></div><div><dt>Best block</dt><dd id="node-best-hash" class="mono short-value">—</dd></div></dl></article>
           <article class="card"><div class="card-head compact"><div><span class="card-kicker">INDEXES</span><h2>İndeks Durumu</h2></div></div><div id="node-index-list" class="index-list"><div class="empty-state">İndeks bilgisi bekleniyor…</div></div></article>
           <article class="card span-2"><div class="card-head compact"><div><span class="card-kicker">CHAIN TIPS</span><h2>Zincir Uçları</h2></div></div><div id="chain-tips" class="chain-tip-grid"><div class="empty-state">Zincir bilgisi bekleniyor…</div></div></article>
           <article class="card"><div class="card-head compact"><div><span class="card-kicker">MINING</span><h2>Ağ Madenciliği</h2></div></div><dl class="detail-list"><div><dt>Difficulty</dt><dd id="node-difficulty">—</dd></div><div><dt>Network hashrate</dt><dd id="node-network-hashrate">—</dd></div><div><dt>Pooled TX</dt><dd id="node-pooled-tx">—</dd></div></dl></article>
@@ -169,13 +150,11 @@
         <div class="page-heading"><div><span class="eyebrow">READ-ONLY CONFIGURATION</span><h1>Havuz Ayarları</h1><p>Aktif havuz çalışma parametrelerinin güvenli özeti.</p></div></div>
         <div class="settings-grid">
           <article class="card setting-card"><div class="setting-icon">₿</div><div><span>Stratum V1</span><strong id="config-sv1">TCP :3333</strong><p>ASIC kullanıcı adı: Bitcoin ödeme adresi</p></div></article>
-          <article class="card setting-card"><div class="setting-icon">V2</div><div><span>Stratum V2</span><strong id="config-sv2">TCP :3336</strong><p>Noise şifrelemesi etkin</p></div></article>
-          <article class="card setting-card"><div class="setting-icon">D</div><div><span>Vardiff Aralığı</span><strong id="config-vardiff">—</strong><p id="config-share-target">Başlangıç diff bekleniyor</p></div></article>
-          <article class="card setting-card"><div class="setting-icon">CB</div><div><span>Coinbase Tag</span><strong id="config-coinbase">/YUMTECH/</strong><p>Bulunan blokların coinbase etiketi</p></div></article>
-          <article class="card setting-card"><div class="setting-icon">VR</div><div><span>Version Rolling</span><strong id="config-version-mask">1fffe000</strong><p>BIP310 maskesi</p></div></article>
-          <article class="card setting-card"><div class="setting-icon">M</div><div><span>Havuz Motoru</span><strong id="config-engine">CKPool</strong><p id="config-engine-build">Bağlantı bilgisi bekleniyor</p></div></article>
+          <article id="config-sv2-card" class="card setting-card" hidden><div class="setting-icon">V2</div><div><span>Stratum V2</span><strong id="config-sv2">—</strong><p>CKPool yapılandırmasındaki SV2 portu</p></div></article>
+          <article id="config-difficulty-card" class="card setting-card" hidden><div class="setting-icon">D</div><div><span>Zorluk Ayarları</span><strong id="config-difficulty">—</strong><p>Yalnızca yapılandırma dosyasında belirtilen değerler</p></div></article>
+          <article id="config-coinbase-card" class="card setting-card" hidden><div class="setting-icon">CB</div><div><span>Coinbase Tag</span><strong id="config-coinbase">—</strong><p>CKPool yapılandırmasındaki coinbase etiketi</p></div></article>
         </div>
-        <article class="card info-card"><div><span class="card-kicker">GÜVENLİK</span><h2>Bu ekran salt okunurdur</h2><p>Bitcoin RPC parolası ve Stratum V2 özel anahtarı API yanıtlarına eklenmez. Dashboard CKPool ayarlarını değiştirmez.</p></div></article>
+        <p class="source-note">Salt okunur görünüm. Dashboard CKPool ayarlarını değiştirmez; özel anahtar ve RPC parolası gösterilmez.</p>
       </section>
     </main>
 
@@ -183,6 +162,6 @@
   </div>
 
   <div id="toast" class="toast" role="status"></div>
-  <script src="/app.js?v=1.0.1" defer></script>
+  <script src="/app.js?v=1.0.2" defer></script>
 </body>
 </html>
