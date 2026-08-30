@@ -8,7 +8,7 @@ from yumtech_dashboard.ckpool import CkpoolClient
 
 class CkpoolSocketTests(unittest.TestCase):
     def test_length_prefixed_poolstats(self):
-        payload = json.dumps({"dsps1": 42, "accepted": 100}).encode()
+        payload = json.dumps({"dsps1": 42, "dsps5": 40, "accepted": 100}).encode()
 
         class FakeSocket:
             def __init__(self):

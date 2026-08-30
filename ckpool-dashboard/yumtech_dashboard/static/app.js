@@ -39,10 +39,12 @@ function finite(value) {
 }
 
 function formatNumber(value, maximumFractionDigits = 0) {
+  if (value === null || value === undefined) return "—";
   return new Intl.NumberFormat("tr-TR", { maximumFractionDigits }).format(finite(value));
 }
 
 function formatHashrate(value) {
+  if (value === null || value === undefined) return "—";
   let number = finite(value);
   const units = ["H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s", "EH/s", "ZH/s"];
   let unit = 0;
@@ -55,6 +57,7 @@ function formatHashrate(value) {
 }
 
 function formatDifficulty(value) {
+  if (value === null || value === undefined) return "—";
   let number = finite(value);
   const units = ["", "K", "M", "G", "T", "P", "E", "Z"];
   let unit = 0;
@@ -79,6 +82,7 @@ function formatBytes(value) {
 }
 
 function formatDuration(value) {
+  if (value === null || value === undefined) return "—";
   let seconds = Math.max(0, Math.floor(finite(value)));
   const days = Math.floor(seconds / 86400);
   seconds %= 86400;
@@ -152,7 +156,7 @@ function setSystemStatus() {
     dot.classList.remove("online", "warning");
   });
 
-  if (poolOnline && nodeOnline) {
+  if (poolOnline && nodeOnline && state.overview.metrics_available !== false) {
     topDot?.classList.add("online");
     sideDot?.classList.add("online");
     text("top-status-text", "Çevrimiçi");
@@ -163,7 +167,9 @@ function setSystemStatus() {
     sideDot?.classList.add("warning");
     text("top-status-text", "Kısmi erişim");
     text("side-health-title", "Kısmi bağlantı");
-    text("side-health-copy", poolOnline ? "Havuz çevrimiçi" : `${nodeName} çevrimiçi`);
+    text("side-health-copy", poolOnline && state.overview.metrics_available === false
+      ? "Havuz çalışıyor; güncel istatistik bekleniyor"
+      : poolOnline ? "Havuz çevrimiçi" : `${nodeName} çevrimiçi`);
   } else {
     text("top-status-text", "Çevrimdışı");
     text("side-health-title", "Bağlantı yok");
@@ -195,7 +201,7 @@ function renderAnalytics() {
   text("network-diff", formatDifficulty(data.network_difficulty));
   const effort = Math.max(0, finite(data.round_effort_pct));
   const effortLabel = effort < .01 ? effort.toFixed(5) : effort < 1 ? effort.toFixed(3) : effort.toFixed(2);
-  text("round-effort", `${effortLabel}%`);
+  text("round-effort", data.round_effort_pct == null ? "—" : `${effortLabel}%`);
   const effortDegrees = Math.min(effort, 100) * 3.6;
   byId("effort-ring")?.style.setProperty("background", `conic-gradient(var(--lime) ${effortDegrees}deg, #edf0ee ${effortDegrees}deg)`);
 
@@ -233,7 +239,8 @@ function renderMiners() {
   const rows = filteredMiners();
   const table = byId("miners-table");
   const online = state.miners.filter((miner) => miner.status === "online").length;
-  setBadge(byId("miners-table-status"), `${online} çevrimiçi`, online ? "" : "muted");
+  const activity = state.miners.some((miner) => miner.status_source === "recent-share") ? "aktif" : "çevrimiçi";
+  setBadge(byId("miners-table-status"), `${online} ${activity}`, online ? "" : "muted");
   if (!table) return;
 
   if (!rows.length) {
@@ -242,14 +249,15 @@ function renderMiners() {
   }
 
   table.innerHTML = rows.map((miner) => {
-    const accepted = finite(miner.shares_accepted);
-    const rejected = finite(miner.shares_rejected);
+    const accepted = miner.shares_accepted;
+    const rejected = miner.shares_rejected;
     const onlineTone = miner.status === "online" ? "" : "muted";
-    const status = miner.status === "online" ? "ONLINE" : "OFFLINE";
+    const inferred = miner.status_source === "recent-share";
+    const status = inferred ? "AKTİF" : miner.status === "online" ? "ONLINE" : "OFFLINE";
     const agent = `<small title="${escapeHtml(miner.user_agent || miner.btc_address)}">${escapeHtml(shortHash(miner.btc_address, 16, 10))}</small>`;
     return `<tr>
       <td><div class="worker-cell"><span class="worker-avatar">${escapeHtml(initials(miner.worker_name))}</span><div><strong>${escapeHtml(miner.worker_name || "worker")}</strong>${agent}</div></div></td>
-      <td><span class="status-badge ${onlineTone}">${status}</span></td>
+      <td><span class="status-badge ${onlineTone}" title="${inferred ? 'Son 3 dakikadaki paylaşım etkinliğine göre; anlık bağlantı listesi değil' : 'Canlı bağlantı'}">${status}</span></td>
       <td><strong>${escapeHtml(miner.protocol || "—")}</strong><div class="muted-text">${formatNumber(miner.connections)} bağlantı</div></td>
       <td><strong>${formatHashrate(miner.hashrate)}</strong><div class="muted-text">5dk ${formatHashrate(miner.hashrate_5m)}</div></td>
       <td><strong>${formatDifficulty(miner.difficulty)}</strong></td>

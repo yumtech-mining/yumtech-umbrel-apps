@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Native CKPool sürümleriyle canlı veri uyumluluğu düzeltildi.
+- Eski/eksik verilerin gösterimi ve dashboard güncellemesi iyileştirildi.
+
 ## 1.0.0
 
 - Raspberry Pi 5 için tek komutlu native systemd kurulumu.

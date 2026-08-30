@@ -19,4 +19,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest discover -s tests -v
+        env:
+          YUMTECH_TEST_UNIX_SOCKETS: "1"
       - run: bash -n install.sh uninstall.sh

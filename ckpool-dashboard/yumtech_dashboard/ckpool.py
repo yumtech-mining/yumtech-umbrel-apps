@@ -37,17 +37,17 @@ class CkpoolClient:
         encoded = payload.encode("utf-8")
         if len(encoded) > 16 * 1024 * 1024:
             raise CkpoolError("CKPool request is unexpectedly large")
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(self.timeout)
-            try:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(self.timeout)
                 sock.connect(self.path)
                 sock.sendall(struct.pack("<I", len(encoded)) + encoded)
                 size = struct.unpack("<I", _read_exact(sock, 4))[0]
                 if size > 64 * 1024 * 1024:
                     raise CkpoolError("CKPool response is unexpectedly large")
                 raw = _read_exact(sock, size)
-            except (OSError, struct.error) as exc:
-                raise CkpoolError(str(exc)) from exc
+        except (OSError, struct.error) as exc:
+            raise CkpoolError(str(exc)) from exc
         try:
             value = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -55,22 +55,34 @@ class CkpoolClient:
         return value if isinstance(value, dict) else {"result": value}
 
     def poolstats(self) -> dict[str, Any]:
-        return self.command("poolstats")
+        value = self.command("poolstats")
+        if "dsps1" not in value or "dsps5" not in value:
+            raise CkpoolError("CKPool did not return pool statistics")
+        return value
+
+    def stats(self) -> dict[str, Any]:
+        value = self.command("stats")
+        if not isinstance(value.get("clients"), dict) or "count" not in value["clients"]:
+            raise CkpoolError("CKPool did not return native stats")
+        return value
+
+    def _list(self, command: str) -> list[dict[str, Any]]:
+        value = self.command(command).get(command)
+        if not isinstance(value, list):
+            raise CkpoolError(f"CKPool did not return {command}")
+        return value
 
     def clients(self) -> list[dict[str, Any]]:
-        value = self.command("clients").get("clients", [])
-        return value if isinstance(value, list) else []
+        return self._list("clients")
 
     def workers(self) -> list[dict[str, Any]]:
-        value = self.command("workers").get("workers", [])
-        return value if isinstance(value, list) else []
+        return self._list("workers")
 
     def users(self) -> list[dict[str, Any]]:
-        value = self.command("users").get("users", [])
-        return value if isinstance(value, list) else []
+        return self._list("users")
 
     def uptime(self) -> int:
         try:
-            return int(self.command("uptime").get("uptime", 0))
-        except (TypeError, ValueError):
-            return 0
+            return int(self.command("uptime")["uptime"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CkpoolError("CKPool did not return uptime") from exc

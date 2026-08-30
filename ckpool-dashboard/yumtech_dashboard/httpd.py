@@ -69,7 +69,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
         if parsed.path == "/healthz":
-            self._json({"status": "ok"})
+            from . import __version__
+            self._json({"status": "ok", "version": __version__})
             return
         if self._require_auth():
             return

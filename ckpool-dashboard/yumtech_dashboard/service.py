@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from .bitcoin import BitcoinRpc
@@ -13,6 +11,8 @@ from .ckpool import CkpoolClient, CkpoolError
 from .collector import LogCollector, sv2_public_identity
 from .config import Settings
 from .storage import Storage
+from .statusfiles import StatusFiles, fresh, hashrate
+from . import __version__
 
 
 DIFF_TO_HASHRATE = 2**32
@@ -66,13 +66,17 @@ class DashboardService:
         self.settings.state_dir.mkdir(parents=True, exist_ok=True)
         self.storage = Storage(self.settings.state_dir / "dashboard.db")
         self.ckpool = CkpoolClient(self.settings.socket_path)
+        self.status_files = StatusFiles(
+            getattr(settings, "pool_status_path", settings.log_path.parent / "pool" / "pool.status"),
+            settings.users_dir,
+        )
+        self._api_retry: dict[str, float] = {}
         self.rpc = BitcoinRpc(
             settings.rpc_url, settings.rpc_user, settings.rpc_password, settings.rpc_timeout
         )
         self._lock = threading.RLock()
         self._pool_cache: tuple[float, dict[str, Any]] = (0.0, {})
         self._node_cache: tuple[float, dict[str, Any]] = (0.0, {})
-        self._status_cache: tuple[float, dict[str, Any]] = (0.0, {})
         self._last_history_bucket = 0
         self._stop_event = threading.Event()
         self._metrics_thread = threading.Thread(target=self._metrics_loop, name="dashboard-metrics", daemon=True)
@@ -104,17 +108,36 @@ class DashboardService:
             if not force and time.time() - self._pool_cache[0] < 2:
                 return self._pool_cache[1]
             try:
-                clients = self.ckpool.clients()
+                health = self.ckpool.stats()
+                snapshot = self.status_files.pool()
+                clients = self._optional_api("clients")
+                stats = self._optional_api("poolstats")
+                worker_rows = self._optional_api("workers") if clients is not None else None
+                uptime = self._optional_api("uptime")
+                source = "socket-api"
+                if stats is None and snapshot.get("fresh"):
+                    stats = {
+                        "dsps1": hashrate(snapshot.get("hashrate1m")) / DIFF_TO_HASHRATE,
+                        "dsps5": hashrate(snapshot.get("hashrate5m")) / DIFF_TO_HASHRATE,
+                        "accepted": number(snapshot.get("accepted")),
+                        "bestshare": number(snapshot.get("bestshare")),
+                        "workers": integer(snapshot.get("Workers")),
+                    }
+                    source = "status-files"
+                if uptime is None and snapshot.get("fresh"):
+                    uptime = integer(snapshot.get("runtime")) + int(snapshot.get("age_seconds") or 0)
                 value = {
                     "online": True,
-                    "poolstats": self.ckpool.poolstats(),
-                    "clients": clients,
-                    "workers": self.ckpool.workers(),
-                    "users": self.ckpool.users(),
-                    "uptime": self.ckpool.uptime(),
+                    "poolstats": stats or {}, "metrics_available": stats is not None,
+                    "clients": clients or [], "client_details_available": clients is not None,
+                    "workers": worker_rows or [], "uptime": uptime,
+                    "connection_count": integer(health["clients"].get("count")),
+                    "worker_count": (stats or {}).get("workers"),
+                    "data_source": source if stats is not None else "unavailable",
+                    "stats_age_seconds": snapshot.get("age_seconds") if source == "status-files" else 0,
                 }
                 now = time.time()
-                for client in clients:
+                for client in clients or []:
                     if not isinstance(client, dict):
                         continue
                     worker = str(client.get("workername") or "")
@@ -124,9 +147,24 @@ class DashboardService:
                             str(client.get("address") or ""), now,
                         )
             except CkpoolError as exc:
-                value = {"online": False, "error": str(exc), "poolstats": {}, "clients": [], "workers": [], "users": [], "uptime": 0}
+                value = {
+                    "online": False, "error": str(exc), "poolstats": {}, "clients": [], "workers": [],
+                    "uptime": None, "metrics_available": False, "connection_count": 0,
+                    "worker_count": 0, "data_source": "unavailable", "stats_age_seconds": None,
+                }
             self._pool_cache = (time.time(), value)
             return value
+
+    def _optional_api(self, name: str) -> Any:
+        # Upstream's send_api_yyresponse may be a no-op. Probe independently,
+        # and do not hammer a known unsupported command on every UI refresh.
+        if time.time() < self._api_retry.get(name, 0):
+            return None
+        try:
+            return getattr(self.ckpool, name)()
+        except CkpoolError:
+            self._api_retry[name] = time.time() + 60
+            return None
 
     def node(self, force: bool = False) -> dict[str, Any]:
         with self._lock:
@@ -138,43 +176,7 @@ class DashboardService:
 
     def _status_records(self) -> dict[str, Any]:
         with self._lock:
-            if time.time() - self._status_cache[0] < 10:
-                return self._status_cache[1]
-            users: dict[str, dict[str, Any]] = {}
-            workers: dict[str, dict[str, Any]] = {}
-            global_best = 0.0
-            try:
-                files = [path for path in self.settings.users_dir.iterdir() if path.is_file()][:5000]
-            except OSError:
-                files = []
-            for path in files:
-                try:
-                    value = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    continue
-                if not isinstance(value, dict):
-                    continue
-                user_value = value.get("user")
-                user_name = user_value if isinstance(user_value, str) else str(value.get("username") or path.name)
-                user_record = user_value if isinstance(user_value, dict) else value
-                user_best = max(number(user_record.get("bestever")), number(user_record.get("bestshare")))
-                global_best = max(global_best, user_best)
-                users[user_name] = {"best": user_best, "shares": integer(user_record.get("shares")), "lastshare": number(user_record.get("lastshare"))}
-                worker_values = value.get("worker") or value.get("workers") or []
-                if isinstance(worker_values, dict):
-                    worker_values = list(worker_values.values())
-                for record in worker_values if isinstance(worker_values, list) else []:
-                    if not isinstance(record, dict):
-                        continue
-                    name = str(record.get("workername") or record.get("worker") or "")
-                    if not name:
-                        continue
-                    best = max(number(record.get("bestever")), number(record.get("bestshare")))
-                    global_best = max(global_best, best)
-                    workers[name] = {"best": best, "shares": integer(record.get("shares")), "lastshare": number(record.get("lastshare"))}
-            output = {"users": users, "workers": workers, "global_best": global_best}
-            self._status_cache = (time.time(), output)
-            return output
+            return self.status_files.users()
 
     def _protocol(self, client: dict[str, Any]) -> str:
         server = client.get("server", 0)
@@ -186,6 +188,10 @@ class DashboardService:
 
     def miners(self) -> list[dict[str, Any]]:
         pool = self._pool()
+        if not pool.get("online"):
+            return []
+        if not pool.get("client_details_available"):
+            return self._snapshot_miners(pool)
         clients = [client for client in pool.get("clients", []) if isinstance(client, dict)]
         worker_rows = [worker for worker in pool.get("workers", []) if isinstance(worker, dict)]
         live = [
@@ -230,11 +236,41 @@ class DashboardService:
                 "difficulty": max(number(item.get("diff")) for item in group),
                 "best_share_difficulty": best,
                 "best_share_hash": str(local_stats.get("best_hash") or ""),
-                "shares_accepted": max(integer(local_stats.get("accepted")), integer(persistent.get("shares"))),
+                "shares_accepted": integer(local_stats.get("accepted")),
+                "accepted_difficulty": number(persistent.get("shares")),
                 "shares_rejected": integer(local_stats.get("rejected")),
                 "last_share_at": iso(lastshare),
                 "connected_seconds": int(now - min(starts)) if starts else 0,
                 "status": "online",
+            })
+        return sorted(result, key=lambda item: item["hashrate"], reverse=True)
+
+    def _snapshot_miners(self, pool: dict[str, Any]) -> list[dict[str, Any]]:
+        # Files do not contain per-client sessions or per-worker protocol/diff.
+        # Never invent those fields or equate historical files with live clients.
+        if pool.get("connection_count") == 0 or pool.get("worker_count") == 0:
+            return []
+        now = time.time()
+        local = self.storage.worker_stats()
+        result = []
+        for name, row in self._status_records()["workers"].items():
+            if not fresh(row.get("updated_at"), now) or not fresh(row.get("lastshare"), now):
+                continue
+            stored = local.get(name, {})
+            user = str(row.get("user") or address_from_worker(name))
+            best = max(number(row.get("best")), number(stored.get("best")))
+            result.append({
+                "worker_name": worker_label(name, user), "worker_full_name": name,
+                "btc_address": user, "user_agent": "", "protocol": "", "ip": "",
+                "connections": None, "difficulty": None, "connected_seconds": None,
+                "hashrate": hashrate(row.get("hashrate1m")),
+                "hashrate_5m": hashrate(row.get("hashrate5m")),
+                "best_share_difficulty": best,
+                "best_share_hash": stored.get("best_hash", "") if number(stored.get("best")) == best else "",
+                "shares_accepted": stored.get("accepted"), "shares_rejected": stored.get("rejected"),
+                "accepted_difficulty": number(row.get("shares")),
+                "last_share_at": iso(max(number(row.get("lastshare")), number(stored.get("last_share")))),
+                "status": "online", "status_source": "recent-share", "data_source": "status-files",
             })
         return sorted(result, key=lambda item: item["hashrate"], reverse=True)
 
@@ -244,34 +280,43 @@ class DashboardService:
         miners = self.miners() if pool.get("online") else []
         status = self._status_records()
         node = self.node()
-        hashrate1 = number(stats.get("dsps1")) * DIFF_TO_HASHRATE
-        hashrate5 = number(stats.get("dsps5")) * DIFF_TO_HASHRATE
+        available = bool(pool.get("metrics_available"))
+        hashrate1 = number(stats.get("dsps1")) * DIFF_TO_HASHRATE if available else None
+        hashrate5 = number(stats.get("dsps5")) * DIFF_TO_HASHRATE if available else None
+        worker_count = pool.get("worker_count")
+        if worker_count is None and pool.get("client_details_available"):
+            worker_count = len(miners)
+        connections = integer(pool.get("connection_count"))
+        if connections == 0:
+            worker_count = 0
         best = max(
-            self.storage.global_best(), number(status.get("global_best")),
+            self.storage.global_best(), number(status.get("global_best")), number(stats.get("bestshare")),
             *(number(worker.get("best_share_difficulty")) for worker in miners),
         )
         current_bucket = int(time.time() // 60)
-        if current_bucket != self._last_history_bucket:
-            self.storage.record_history(hashrate1, len(miners), sum(item["connections"] for item in miners))
+        if current_bucket != self._last_history_bucket and available:
+            self.storage.record_history(hashrate1, integer(worker_count), connections)
             self._last_history_bucket = current_bucket
         return {
             "hashrate_1m": hashrate1, "hashrate_5m": hashrate5,
-            "workers": len(miners), "connections": sum(item["connections"] for item in miners),
+            "workers": worker_count, "connections": connections,
             "best_share": best, "blocks": self.storage.block_count(),
-            "uptime_seconds": integer(pool.get("uptime")), "online": bool(pool.get("online")),
+            "uptime_seconds": pool.get("uptime"), "online": bool(pool.get("online")),
             "template_height": integer(node.get("blocks")) + 1 if node.get("online") else 0,
-            "engine": "CKPool",
+            "engine": "CKPool", "version": __version__, "metrics_available": available,
+            "data_source": pool.get("data_source"), "stats_age_seconds": pool.get("stats_age_seconds"),
         }
 
     def analytics(self) -> dict[str, Any]:
         output = self.storage.analytics()
-        stats = self._pool().get("poolstats", {})
+        pool = self._pool()
+        stats = pool.get("poolstats", {})
         node = self.node()
-        round_diff = number(stats.get("accepted"))
+        round_diff = number(stats.get("accepted")) if pool.get("metrics_available") else None
         network_diff = number(node.get("difficulty"))
         output.update({
             "round_diff": round_diff, "network_difficulty": network_diff,
-            "round_effort_pct": round_diff / network_diff * 100 if network_diff else 0.0,
+            "round_effort_pct": round_diff / network_diff * 100 if round_diff is not None and network_diff else None,
         })
         return output
 
@@ -288,7 +333,7 @@ class DashboardService:
             "sv2_enabled": bool(config.get("sv2url")),
             "starting_difficulty": starting, "vardiff_min": minimum, "vardiff_max": maximum,
             "version_rolling_mask": str(config.get("versionmask") or config.get("version_mask") or "1fffe000"),
-            "engine": "CKPool", "engine_build": "Native Unix-socket API",
+            "engine": "CKPool", "engine_build": "Native stats + CKPool snapshots", "version": __version__,
             "sv2_public_key": public_key, "sv2_public_key_fingerprint": fingerprint,
             "retention_days": self.settings.retention_days,
         }

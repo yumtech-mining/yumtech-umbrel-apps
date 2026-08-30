@@ -148,6 +148,10 @@ class Settings:
         )
 
     @property
+    def pool_status_path(self) -> Path:
+        return Path(os.environ.get("CKPOOL_POOL_STATUS") or self.log_path.parent / "pool" / "pool.status")
+
+    @property
     def sv1_servers(self) -> int:
         value = self.config.get("serverurl")
         return len(value) if isinstance(value, list) else (1 if value else 0)

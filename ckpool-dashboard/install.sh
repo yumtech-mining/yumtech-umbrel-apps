@@ -111,14 +111,35 @@ install -d -o "${CKPOOL_USER}" -g "${CKPOOL_GROUP}" -m 750 /var/lib/yumtech-ckpo
 } >"${UNIT_FILE}"
 
 systemctl daemon-reload
-systemctl enable --now yumtech-ckpool-dashboard.service
+systemctl enable yumtech-ckpool-dashboard.service
+# enable --now does not replace an already running Python process on upgrade.
+systemctl restart yumtech-ckpool-dashboard.service
 
+# Preserve the installed port; never source an environment file as shell code.
+DASHBOARD_PORT="$(python3 - "${ENV_FILE}" "${DASHBOARD_PORT}" <<'PY'
+import pathlib, sys
+port = sys.argv[2]
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    key, sep, value = line.strip().partition('=')
+    if sep and key == 'DASHBOARD_PORT':
+        port = value.strip().strip('\"\x27')
+if not port.isdigit() or not 1 <= int(port) <= 65535:
+    raise SystemExit('Geçersiz DASHBOARD_PORT')
+print(port)
+PY
+)"
+
+READY=false
 for _ in {1..20}; do
-  if curl -fsS "http://127.0.0.1:${DASHBOARD_PORT}/healthz" >/dev/null 2>&1; then break; fi
+  if curl -fsS --max-time 2 "http://127.0.0.1:${DASHBOARD_PORT}/healthz" 2>/dev/null |
+    python3 -c 'import json,sys; sys.exit(json.load(sys.stdin).get("version") != sys.argv[1])' "${VERSION}" 2>/dev/null; then
+    READY=true
+    break
+  fi
   sleep 1
 done
 
-if ! systemctl is-active --quiet yumtech-ckpool-dashboard.service; then
+if [[ ${READY} != true ]] || ! systemctl is-active --quiet yumtech-ckpool-dashboard.service; then
   echo "Dashboard başlatılamadı. Son kayıtlar:" >&2
   journalctl -u yumtech-ckpool-dashboard.service -n 50 --no-pager >&2
   exit 1

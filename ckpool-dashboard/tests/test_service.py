@@ -8,6 +8,7 @@ from yumtech_dashboard.service import DIFF_TO_HASHRATE, DashboardService
 
 
 class FakeCkpool:
+    def stats(self): return {"clients": {"count": 1}}
     def poolstats(self): return {"dsps1": 2, "dsps5": 1.5, "accepted": 5000}
     def clients(self):
         return [{
@@ -59,7 +60,8 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(miners[0]["worker_name"], "s19")
             self.assertEqual(miners[0]["btc_address"], "bc1qexample")
             self.assertEqual(miners[0]["best_share_difficulty"], 1_200_000_000)
-            self.assertEqual(miners[0]["shares_accepted"], 77)
+            self.assertEqual(miners[0]["shares_accepted"], 0)
+            self.assertEqual(miners[0]["accepted_difficulty"], 77)
             self.assertEqual(overview["hashrate_1m"], 2 * DIFF_TO_HASHRATE)
             self.assertEqual(overview["template_height"], 1_000_000)
             self.assertAlmostEqual(analytics["round_effort_pct"], 5.0)
