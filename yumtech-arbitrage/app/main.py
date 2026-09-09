@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .db import Database
-from .domain import LiveQualification
+from .domain import LiveQualification, Opportunity
+from .execution import ArbitrageExecutionEngine, PaperAdapter, RecoveryLimitExceeded
 from .exchanges import BTCTurkPublic
 from .scanner import MarketScanner
 from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create_master_key, new_session_token, passwords
@@ -23,13 +24,21 @@ from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create
 db: Database
 master_key: bytes
 scanner = MarketScanner(Decimal(settings.target_try), Decimal(settings.min_net_profit_pct))
+execution_engine: ArbitrageExecutionEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global db, master_key
+    global db, master_key, execution_engine
     db = Database(settings.database_path)
+    halted_on_startup = db.halt_incomplete_executions()
     master_key = load_or_create_master_key(settings.master_key_path)
+    execution_engine = ArbitrageExecutionEngine(db, {
+        "BTCTürk": PaperAdapter("BTCTürk"),
+        "Binance TR": PaperAdapter("Binance TR"),
+    })
+    if halted_on_startup:
+        db.audit(None, "startup_reconciliation", json.dumps({"halted_executions": halted_on_startup}))
     task = asyncio.create_task(scanner.run())
     yield
     scanner.stop()
@@ -40,7 +49,7 @@ async def lifespan(_: FastAPI):
         pass
 
 
-app = FastAPI(title="YUMTECH Arbitrage", version="0.2.1", lifespan=lifespan,
+app = FastAPI(title="YUMTECH Arbitrage", version="0.3.0-dev", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 
@@ -53,6 +62,12 @@ class Credentials(BaseModel):
 class Login(BaseModel):
     username: str = Field(min_length=3, max_length=40, pattern=r"^[\w.-]+$")
     password: str = Field(min_length=12, max_length=200)
+
+
+class PaperExecutionRequest(BaseModel):
+    pair: str = Field(min_length=5, max_length=30)
+    buy_exchange: str = Field(pattern="^(BTCTürk|Binance TR)$")
+    sell_exchange: str = Field(pattern="^(BTCTürk|Binance TR)$")
 
 
 def current_user(session: str | None = Cookie(default=None, alias="yumtech_session")) -> dict:
@@ -205,6 +220,40 @@ async def test_credentials(exchange: str, user: dict = Depends(require_csrf)):
 def opportunities(user: dict = Depends(current_user)):
     return {"common_pair_count": len(scanner.common_pairs), "pairs": scanner.common_pairs,
             "items": scanner.opportunities, "last_success_ms": scanner.last_success_ms, "error": scanner.last_error}
+
+
+def _opportunity_from_snapshot(item: dict) -> Opportunity:
+    decimal_fields = {"base_amount", "buy_vwap", "sell_vwap", "gross_profit_try", "fees_try",
+                      "safety_buffer_try", "net_profit_try", "net_profit_pct"}
+    values = {key: Decimal(value) if key in decimal_fields else value for key, value in item.items()}
+    return Opportunity(**values)
+
+
+@app.post("/api/paper/execute", status_code=201)
+async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(require_csrf)):
+    match = next((item for item in scanner.opportunities
+                  if item["pair"] == payload.pair and item["buy_exchange"] == payload.buy_exchange
+                  and item["sell_exchange"] == payload.sell_exchange), None)
+    if match is None:
+        raise HTTPException(404, "Güncel fırsat bulunamadı")
+    if not match.get("executable"):
+        raise HTTPException(409, "Fırsat işlem koşullarını karşılamıyor")
+    with db.connect() as conn:
+        risk = conn.execute("SELECT max_recovery_loss_try FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+    try:
+        result = await execution_engine.execute_paper(
+            user["id"], _opportunity_from_snapshot(match), Decimal(risk["max_recovery_loss_try"]))
+    except RecoveryLimitExceeded:
+        raise HTTPException(409, "Kurtarma zarar limiti aşıldı; motor güvenli durumda durduruldu")
+    db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id, "state": result.state.value}))
+    return {"intent_id": result.intent_id, "state": result.state.value,
+            "realized_profit_try": str(result.realized_profit_try), "exposure_base": str(result.exposure_base),
+            "recovered": result.recovery_fill is not None}
+
+
+@app.get("/api/executions")
+def executions(limit: int = 100, user: dict = Depends(current_user)):
+    return {"items": db.list_executions(user["id"], limit)}
 
 
 @app.get("/api/live/qualification")

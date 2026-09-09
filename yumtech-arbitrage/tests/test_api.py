@@ -19,3 +19,16 @@ def test_owner_session_csrf_and_separate_user(tmp_path):
         assert added.status_code == 201
         live = client.post("/api/live/enable", headers={"X-CSRF-Token": csrf})
         assert live.status_code == 423
+        main.scanner.opportunities = [{
+            "pair": "BTC/TRY", "buy_exchange": "BTCTürk", "sell_exchange": "Binance TR",
+            "base_amount": "0.001", "buy_vwap": "1000000", "sell_vwap": "1010000",
+            "gross_profit_try": "10", "fees_try": "3.015", "safety_buffer_try": "1",
+            "net_profit_try": "5.985", "net_profit_pct": "0.005985", "executable": True,
+        }]
+        paper = client.post("/api/paper/execute", headers={"X-CSRF-Token": csrf}, json={
+            "pair": "BTC/TRY", "buy_exchange": "BTCTürk", "sell_exchange": "Binance TR"})
+        assert paper.status_code == 201
+        assert paper.json()["state"] == "BALANCED_FILL"
+        history = client.get("/api/executions")
+        assert history.status_code == 200
+        assert history.json()["items"][0]["id"] == paper.json()["intent_id"]
