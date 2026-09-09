@@ -132,6 +132,10 @@ class LiveQualification:
     failure_drills_ok: bool
     risk_limits_set: bool
     telemetry_blocked: bool
+    # BTCTurk market BUY accepts quote TRY, while Hummingbot strategies express
+    # size in base asset. Live mode must remain closed until that conversion,
+    # balance validation and post-fill reconciliation are proven together.
+    btcturk_market_buy_conversion_safe: bool = False
 
     def failures(self) -> list[str]:
         checks = [
@@ -142,5 +146,7 @@ class LiveQualification:
             (self.failure_drills_ok, "Kesinti ve tek-bacak testleri geçmedi"),
             (self.risk_limits_set, "Risk limitleri tanımlanmadı"),
             (self.telemetry_blocked, "Telemetri engeli doğrulanmadı"),
+            (self.btcturk_market_buy_conversion_safe,
+             "BTCTürk market alış TRY dönüşümü ve gerçekleşen miktar mutabakatı tamamlanmadı"),
         ]
         return [message for passed, message in checks if not passed]

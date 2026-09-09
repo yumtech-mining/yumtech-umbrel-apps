@@ -4,8 +4,9 @@ from typing import Dict, List, Optional
 
 from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
-from hummingbot.core.web_assistant.connections.data_types import RESTMethod
+from hummingbot.core.web_assistant.connections.data_types import RESTMethod, WSJSONRequest
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
+from hummingbot.core.web_assistant.ws_assistant import WSAssistant
 
 from . import btcturk_constants as CONSTANTS
 from . import btcturk_web_utils as web_utils
@@ -14,9 +15,9 @@ from .btcturk_parsers import unwrap_response
 
 
 class BtcTurkAPIOrderBookDataSource(OrderBookTrackerDataSource):
-    """Rate-limited REST snapshots; WebSocket deltas will replace this fallback."""
+    """Official 431/432 order book feed with hourly REST resynchronization."""
 
-    SNAPSHOT_INTERVAL = 2.0
+    HEARTBEAT_INTERVAL = 30.0
 
     def __init__(self, trading_pairs: List[str], connector, api_factory: WebAssistantsFactory):
         super().__init__(trading_pairs)
@@ -46,39 +47,44 @@ class BtcTurkAPIOrderBookDataSource(OrderBookTrackerDataSource):
             metadata={"trading_pair": trading_pair},
         )
 
-    async def listen_for_order_book_snapshots(self, ev_loop, output: asyncio.Queue):
-        while True:
-            for trading_pair in self._trading_pairs:
-                output.put_nowait(await self._order_book_snapshot(trading_pair))
-                await self._sleep(self.SNAPSHOT_INTERVAL)
+    async def _connected_websocket_assistant(self) -> WSAssistant:
+        ws = await self._api_factory.get_ws_assistant()
+        await ws.connect(ws_url=CONSTANTS.WSS_PUBLIC_URL, ping_timeout=self.HEARTBEAT_INTERVAL)
+        return ws
 
-    async def listen_for_subscriptions(self):
-        while True:
-            await self._sleep(3600)
-
-    async def listen_for_order_book_diffs(self, ev_loop, output: asyncio.Queue):
-        while True:
-            await self._sleep(3600)
-
-    async def listen_for_trades(self, ev_loop, output: asyncio.Queue):
-        while True:
-            await self._sleep(3600)
-
-    async def _connected_websocket_assistant(self):
-        raise NotImplementedError
-
-    async def _subscribe_channels(self, ws):
-        raise NotImplementedError
+    async def _subscribe_channels(self, ws: WSAssistant):
+        for pair in self._trading_pairs:
+            symbol = (await self._connector.exchange_symbol_associated_to_pair(pair)).upper()
+            for channel in ("orderbook", "obdiff", "trade"):
+                await ws.send(WSJSONRequest(payload=[151, {
+                    "type": 151, "channel": channel, "event": symbol, "join": True}]))
 
     def _channel_originating_message(self, event_message):
+        if not isinstance(event_message, list) or len(event_message) != 2:
+            return ""
+        message_type = int(event_message[0])
+        if message_type == 431:
+            return self._snapshot_messages_queue_key
+        if message_type == 432:
+            return self._diff_messages_queue_key
+        if message_type == 422:
+            return self._trade_messages_queue_key
         return ""
 
     async def _parse_trade_message(self, raw_message, message_queue):
-        return None
+        payload = raw_message[1]
+        pair = await self._connector.trading_pair_associated_to_exchange_symbol(payload["PS"])
+        message_queue.put_nowait(BtcTurkOrderBook.trade_message_from_exchange(
+            payload, {"trading_pair": pair}))
 
     async def _parse_order_book_diff_message(self, raw_message, message_queue):
-        return None
+        payload = raw_message[1]
+        pair = await self._connector.trading_pair_associated_to_exchange_symbol(payload["PS"])
+        message_queue.put_nowait(BtcTurkOrderBook.diff_message_from_exchange(
+            payload, time.time(), {"trading_pair": pair}))
 
     async def _parse_order_book_snapshot_message(self, raw_message, message_queue):
-        return None
-
+        payload = raw_message[1]
+        pair = await self._connector.trading_pair_associated_to_exchange_symbol(payload["PS"])
+        message_queue.put_nowait(BtcTurkOrderBook.ws_snapshot_message_from_exchange(
+            payload, time.time(), {"trading_pair": pair}))

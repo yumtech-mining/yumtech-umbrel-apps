@@ -4,8 +4,9 @@ from typing import Dict, List, Optional
 
 from hummingbot.core.data_type.order_book_message import OrderBookMessage
 from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTrackerDataSource
-from hummingbot.core.web_assistant.connections.data_types import RESTMethod
+from hummingbot.core.web_assistant.connections.data_types import RESTMethod, WSJSONRequest
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
+from hummingbot.core.web_assistant.ws_assistant import WSAssistant
 
 from . import binance_tr_constants as CONSTANTS
 from . import binance_tr_web_utils as web_utils
@@ -15,7 +16,7 @@ from .binance_tr_utils import api_symbol
 
 
 class BinanceTRAPIOrderBookDataSource(OrderBookTrackerDataSource):
-    SNAPSHOT_INTERVAL = 1.0
+    HEARTBEAT_INTERVAL = 30.0
 
     def __init__(self, trading_pairs: List[str], connector, api_factory: WebAssistantsFactory):
         super().__init__(trading_pairs)
@@ -38,25 +39,38 @@ class BinanceTRAPIOrderBookDataSource(OrderBookTrackerDataSource):
         return BinanceTROrderBook.snapshot_message_from_exchange(
             snapshot, timestamp, {"trading_pair": trading_pair})
 
-    async def listen_for_order_book_snapshots(self, ev_loop, output: asyncio.Queue):
-        while True:
-            for pair in self._trading_pairs:
-                output.put_nowait(await self._order_book_snapshot(pair))
-                await self._sleep(self.SNAPSHOT_INTERVAL)
+    async def _connected_websocket_assistant(self) -> WSAssistant:
+        ws = await self._api_factory.get_ws_assistant()
+        await ws.connect(ws_url=CONSTANTS.PUBLIC_WS_URL, ping_timeout=self.HEARTBEAT_INTERVAL)
+        return ws
 
-    async def listen_for_subscriptions(self):
-        while True: await self._sleep(3600)
+    async def _subscribe_channels(self, ws: WSAssistant):
+        symbols = [api_symbol(await self._connector.exchange_symbol_associated_to_pair(pair)).lower()
+                   for pair in self._trading_pairs]
+        await ws.send(WSJSONRequest(payload={
+            "method": "SUBSCRIBE", "params": [f"{symbol}@depth@100ms" for symbol in symbols], "id": 1}))
+        await ws.send(WSJSONRequest(payload={
+            "method": "SUBSCRIBE", "params": [f"{symbol}@trade" for symbol in symbols], "id": 2}))
 
-    async def listen_for_order_book_diffs(self, ev_loop, output: asyncio.Queue):
-        while True: await self._sleep(3600)
+    def _channel_originating_message(self, event_message):
+        if "result" in event_message:
+            return ""
+        event_type = event_message.get("e")
+        if event_type == "depthUpdate":
+            return self._diff_messages_queue_key
+        if event_type == "trade":
+            return self._trade_messages_queue_key
+        return ""
 
-    async def listen_for_trades(self, ev_loop, output: asyncio.Queue):
-        while True: await self._sleep(3600)
+    async def _parse_trade_message(self, raw_message, message_queue):
+        pair = await self._connector.trading_pair_associated_to_exchange_symbol(raw_message["s"])
+        message_queue.put_nowait(BinanceTROrderBook.trade_message_from_exchange(
+            raw_message, {"trading_pair": pair}))
 
-    async def _connected_websocket_assistant(self): raise NotImplementedError
-    async def _subscribe_channels(self, ws): raise NotImplementedError
-    def _channel_originating_message(self, event_message): return ""
-    async def _parse_trade_message(self, raw_message, message_queue): return None
-    async def _parse_order_book_diff_message(self, raw_message, message_queue): return None
+    async def _parse_order_book_diff_message(self, raw_message, message_queue):
+        pair = await self._connector.trading_pair_associated_to_exchange_symbol(raw_message["s"])
+        timestamp = float(raw_message.get("E", time.time() * 1e3)) * 1e-3
+        message_queue.put_nowait(BinanceTROrderBook.diff_message_from_exchange(
+            raw_message, timestamp, {"trading_pair": pair}))
+
     async def _parse_order_book_snapshot_message(self, raw_message, message_queue): return None
-

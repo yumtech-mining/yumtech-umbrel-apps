@@ -111,3 +111,24 @@ def test_binance_tr_uses_current_local_exchange_endpoints():
     assert 'ACCOUNT_PATH_URL = "/open/v1/account/spot"' in constants
     assert 'LISTEN_TOKEN_PATH_URL = "/open/v1/user-listen-token"' in constants
     assert 'PUBLIC_WS_URL = "wss://stream-cloud.binance.tr/ws"' in constants
+
+
+def test_public_order_books_use_websocket_deltas_instead_of_rest_poll_loops():
+    connector_root = ROOT / "hummingbot-overlay" / "hummingbot" / "connector" / "exchange"
+    btcturk = (connector_root / "btcturk" / "btcturk_api_order_book_data_source.py").read_text()
+    binance_tr = (connector_root / "binance_tr" / "binance_tr_api_order_book_data_source.py").read_text()
+
+    assert '"orderbook", "obdiff", "trade"' in btcturk
+    assert "message_type == 431" in btcturk
+    assert "message_type == 432" in btcturk
+    assert "@depth@100ms" in binance_tr
+    assert 'event_type == "depthUpdate"' in binance_tr
+    assert "raise NotImplementedError" not in btcturk
+    assert "raise NotImplementedError" not in binance_tr
+
+
+def test_live_safety_gate_documents_btcturk_quote_sized_market_buy():
+    gate = (ROOT / "docs" / "LIVE_SAFETY_GATES.md").read_text()
+    domain = (ROOT / "app" / "domain.py").read_text()
+    assert "TRY (quote)" in gate
+    assert "btcturk_market_buy_conversion_safe" in domain
