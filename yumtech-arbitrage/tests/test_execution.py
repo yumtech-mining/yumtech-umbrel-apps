@@ -4,6 +4,7 @@ import pytest
 
 from app.db import Database
 from app.domain import ExecutionState, Opportunity
+from app.coordinator import PaperCoordinator
 from app.execution import ArbitrageExecutionEngine, PaperAdapter, RecoveryLimitExceeded
 from app.security import passwords
 
@@ -81,3 +82,20 @@ def test_startup_reconciliation_halts_unknown_inflight_intent(tmp_path):
     saved = db.list_executions(1)[0]
     assert saved["state"] == "HALTED"
     assert "manual reconciliation" in saved["error"]
+
+
+@pytest.mark.anyio
+async def test_coordinator_uses_live_snapshot_once_per_cooldown(tmp_path):
+    db = database(tmp_path)
+    with db.connect() as conn:
+        conn.execute("UPDATE user_settings SET active=1,max_trade_try='20000' WHERE user_id=1")
+    item = {key: str(value) if isinstance(value, Decimal) else value
+            for key, value in opportunity().__dict__.items()}
+    scanner = type("Scanner", (), {"opportunities": [item], "snapshot_id": 1})()
+    engine = ArbitrageExecutionEngine(db, {
+        "BTCTürk": PaperAdapter("BTCTürk"), "Binance TR": PaperAdapter("Binance TR")})
+    coordinator = PaperCoordinator(db, scanner, engine, cooldown_seconds=60)
+    await coordinator.process_snapshot()
+    await coordinator.process_snapshot()
+    assert coordinator.last_execution_id is not None
+    assert len(db.list_executions(1)) == 1

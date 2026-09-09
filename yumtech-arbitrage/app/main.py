@@ -13,9 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .coordinator import PaperCoordinator
 from .db import Database
-from .domain import LiveQualification, Opportunity
-from .execution import ArbitrageExecutionEngine, PaperAdapter, RecoveryLimitExceeded
+from .domain import LiveQualification
+from .execution import (ArbitrageExecutionEngine, PaperAdapter,
+                        RecoveryLimitExceeded, opportunity_from_mapping)
 from .exchanges import BTCTurkPublic
 from .scanner import MarketScanner
 from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create_master_key, new_session_token, passwords
@@ -23,13 +25,15 @@ from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create
 
 db: Database
 master_key: bytes
-scanner = MarketScanner(Decimal(settings.target_try), Decimal(settings.min_net_profit_pct))
+scanner = MarketScanner(Decimal(settings.target_try), Decimal(settings.min_net_profit_pct),
+                        settings.scanner_interval_seconds)
 execution_engine: ArbitrageExecutionEngine | None = None
+paper_coordinator: PaperCoordinator | None = None
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global db, master_key, execution_engine
+    global db, master_key, execution_engine, paper_coordinator
     db = Database(settings.database_path)
     halted_on_startup = db.halt_incomplete_executions()
     master_key = load_or_create_master_key(settings.master_key_path)
@@ -37,14 +41,18 @@ async def lifespan(_: FastAPI):
         "BTCTürk": PaperAdapter("BTCTürk"),
         "Binance TR": PaperAdapter("Binance TR"),
     })
+    paper_coordinator = PaperCoordinator(db, scanner, execution_engine)
     if halted_on_startup:
         db.audit(None, "startup_reconciliation", json.dumps({"halted_executions": halted_on_startup}))
     task = asyncio.create_task(scanner.run())
+    coordinator_task = asyncio.create_task(paper_coordinator.run())
     yield
+    paper_coordinator.stop()
     scanner.stop()
+    coordinator_task.cancel()
     task.cancel()
     try:
-        await task
+        await asyncio.gather(task, coordinator_task)
     except asyncio.CancelledError:
         pass
 
@@ -68,6 +76,13 @@ class PaperExecutionRequest(BaseModel):
     pair: str = Field(min_length=5, max_length=30)
     buy_exchange: str = Field(pattern="^(BTCTürk|Binance TR)$")
     sell_exchange: str = Field(pattern="^(BTCTürk|Binance TR)$")
+
+
+class TestSettingsUpdate(BaseModel):
+    active: bool
+    max_trade_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+    daily_loss_limit_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+    max_recovery_loss_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
 
 
 def current_user(session: str | None = Cookie(default=None, alias="yumtech_session")) -> dict:
@@ -101,7 +116,10 @@ async def security_headers(request: Request, call_next):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "mode": "test", "live_orders_enabled": False,
-            "scanner": scanner.running, "last_success_ms": scanner.last_success_ms}
+            "scanner": scanner.running, "last_success_ms": scanner.last_success_ms,
+            "market_snapshot_id": scanner.snapshot_id,
+            "paper_coordinator": bool(paper_coordinator and paper_coordinator.running),
+            "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None}
 
 
 @app.get("/api/bootstrap")
@@ -197,7 +215,7 @@ async def test_credentials(exchange: str, user: dict = Depends(require_csrf)):
     api_key = decrypt_secret(master_key, user["id"], exchange, row["api_key_enc"])
     secret = decrypt_secret(master_key, user["id"], exchange, row["secret_enc"])
     try:
-        async with httpx.AsyncClient(timeout=8) as client:
+        async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
             if exchange == "btcturk":
                 result = await client.get("https://api.btcturk.com/api/v1/users/balances", headers=BTCTurkPublic.auth_headers(api_key, secret))
             else:
@@ -205,8 +223,12 @@ async def test_credentials(exchange: str, user: dict = Depends(require_csrf)):
                 query = f"timestamp={timestamp}&recvWindow=5000"
                 import hashlib, hmac
                 signature = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
-                result = await client.get(f"https://api.binance.me/api/v3/account?{query}&signature={signature}", headers={"X-MBX-APIKEY": api_key})
+                result = await client.get(f"https://www.binance.tr/open/v1/account/spot?{query}&signature={signature}",
+                                          headers={"X-MBX-APIKEY": api_key})
             result.raise_for_status()
+            body = result.json()
+            if exchange == "binance_tr" and int(body.get("code", 0)) != 0:
+                raise ValueError("Binance TR API rejected credentials")
     except Exception as exc:
         db.audit(user["id"], "credential_test_failed", json.dumps({"exchange": exchange, "error": type(exc).__name__}))
         raise HTTPException(400, "Borsa bağlantısı doğrulanamadı")
@@ -219,14 +241,28 @@ async def test_credentials(exchange: str, user: dict = Depends(require_csrf)):
 @app.get("/api/opportunities")
 def opportunities(user: dict = Depends(current_user)):
     return {"common_pair_count": len(scanner.common_pairs), "pairs": scanner.common_pairs,
-            "items": scanner.opportunities, "last_success_ms": scanner.last_success_ms, "error": scanner.last_error}
+            "items": scanner.opportunities, "last_success_ms": scanner.last_success_ms,
+            "snapshot_id": scanner.snapshot_id, "error": scanner.last_error}
 
 
-def _opportunity_from_snapshot(item: dict) -> Opportunity:
-    decimal_fields = {"base_amount", "buy_vwap", "sell_vwap", "gross_profit_try", "fees_try",
-                      "safety_buffer_try", "net_profit_try", "net_profit_pct"}
-    values = {key: Decimal(value) if key in decimal_fields else value for key, value in item.items()}
-    return Opportunity(**values)
+@app.put("/api/settings/test")
+def update_test_settings(payload: TestSettingsUpdate, user: dict = Depends(require_csrf)):
+    amounts = [Decimal(payload.max_trade_try), Decimal(payload.daily_loss_limit_try),
+               Decimal(payload.max_recovery_loss_try)]
+    if any(value <= 0 for value in amounts):
+        raise HTTPException(422, "Risk limitleri sıfırdan büyük olmalı")
+    if amounts[2] > amounts[0]:
+        raise HTTPException(422, "Kurtarma zarar limiti işlem limitini aşamaz")
+    with db.connect() as conn:
+        if payload.active:
+            # Pi 5 resource and account safety: only one active profile may trade.
+            conn.execute("UPDATE user_settings SET active=0 WHERE user_id<>?", (user["id"],))
+        conn.execute("UPDATE user_settings SET mode='test',active=?,max_trade_try=?,daily_loss_limit_try=?,"
+                     "max_recovery_loss_try=? WHERE user_id=?",
+                     (int(payload.active), payload.max_trade_try, payload.daily_loss_limit_try,
+                      payload.max_recovery_loss_try, user["id"]))
+    db.audit(user["id"], "test_settings_updated", json.dumps(payload.model_dump()))
+    return {"mode": "test", **payload.model_dump()}
 
 
 @app.post("/api/paper/execute", status_code=201)
@@ -242,7 +278,7 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
         risk = conn.execute("SELECT max_recovery_loss_try FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
     try:
         result = await execution_engine.execute_paper(
-            user["id"], _opportunity_from_snapshot(match), Decimal(risk["max_recovery_loss_try"]))
+            user["id"], opportunity_from_mapping(match), Decimal(risk["max_recovery_loss_try"]))
     except RecoveryLimitExceeded:
         raise HTTPException(409, "Kurtarma zarar limiti aşıldı; motor güvenli durumda durduruldu")
     db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id, "state": result.state.value}))

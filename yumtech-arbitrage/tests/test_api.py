@@ -19,6 +19,14 @@ def test_owner_session_csrf_and_separate_user(tmp_path):
         assert added.status_code == 201
         live = client.post("/api/live/enable", headers={"X-CSRF-Token": csrf})
         assert live.status_code == 423
+        invalid_settings = client.put("/api/settings/test", headers={"X-CSRF-Token": csrf}, json={
+            "active": True, "max_trade_try": "100", "daily_loss_limit_try": "50",
+            "max_recovery_loss_try": "101"})
+        assert invalid_settings.status_code == 422
+        test_settings = client.put("/api/settings/test", headers={"X-CSRF-Token": csrf}, json={
+            "active": True, "max_trade_try": "1000", "daily_loss_limit_try": "250",
+            "max_recovery_loss_try": "100"})
+        assert test_settings.status_code == 200 and test_settings.json()["active"] is True
         main.scanner.opportunities = [{
             "pair": "BTC/TRY", "buy_exchange": "BTCTürk", "sell_exchange": "Binance TR",
             "base_amount": "0.001", "buy_vwap": "1000000", "sell_vwap": "1010000",

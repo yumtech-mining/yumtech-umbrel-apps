@@ -2,6 +2,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 
 
@@ -168,3 +169,25 @@ class Database:
                 db.execute("INSERT INTO execution_events(intent_id,state,detail,created_at) VALUES(?,?,?,?)",
                            (row["id"], "HALTED", '{"reason":"startup_reconciliation"}', now))
             return len(rows)
+
+    def active_paper_profiles(self) -> list[dict]:
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT user_id,max_trade_try,daily_loss_limit_try,max_recovery_loss_try "
+                "FROM user_settings WHERE mode='test' AND active=1 ORDER BY user_id"
+            )]
+
+    def has_recent_execution(self, user_id: int, pair: str, since_ms: int) -> bool:
+        with self.connect() as db:
+            return db.execute(
+                "SELECT 1 FROM execution_intents WHERE user_id=? AND pair=? AND created_at>=? LIMIT 1",
+                (user_id, pair, since_ms),
+            ).fetchone() is not None
+
+    def realized_loss_since(self, user_id: int, since_ms: int) -> str:
+        with self.connect() as db:
+            values = [row[0] for row in db.execute(
+                "SELECT realized_profit_try FROM execution_intents WHERE user_id=? AND created_at>=? "
+                "AND realized_profit_try IS NOT NULL", (user_id, since_ms))]
+        loss = sum((-Decimal(value) for value in values if Decimal(value) < 0), Decimal("0"))
+        return str(loss)

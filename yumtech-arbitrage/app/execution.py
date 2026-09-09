@@ -196,3 +196,10 @@ class RecoveryLimitExceeded(RuntimeError):
 
 def reference_price(opportunity: Opportunity, side: Side) -> Decimal:
     return opportunity.buy_vwap if side is Side.SELL else opportunity.sell_vwap
+
+
+def opportunity_from_mapping(item: dict) -> Opportunity:
+    decimal_fields = {"base_amount", "buy_vwap", "sell_vwap", "gross_profit_try", "fees_try",
+                      "safety_buffer_try", "net_profit_try", "net_profit_pct"}
+    return Opportunity(**{key: Decimal(value) if key in decimal_fields else value
+                          for key, value in item.items()})

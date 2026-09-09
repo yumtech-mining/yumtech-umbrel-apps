@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 class MarketScanner:
     """Public-data scanner. It has no credential or order access by design."""
-    def __init__(self, target_try: Decimal, min_profit_pct: Decimal):
+    def __init__(self, target_try: Decimal, min_profit_pct: Decimal, cycle_pause_seconds: float = 5.0):
         self.target_try = target_try
         self.min_profit_rate = min_profit_pct / Decimal("100")
         self.common_pairs: list[str] = []
@@ -23,15 +23,24 @@ class MarketScanner:
         self.last_success_ms: int | None = None
         self.last_error: str | None = None
         self.running = False
+        self.snapshot_id = 0
+        self.cycle_pause_seconds = max(cycle_pause_seconds, 1.0)
+        self._markets_refreshed_at = 0.0
+        self._bt_markets = {}
+        self._bn_markets = {}
 
     async def run(self) -> None:
         self.running = True
         timeout = httpx.Timeout(8, connect=5)
-        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.2.1"}, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.3.0"}, trust_env=False) as client:
             bt, bn = BTCTurkPublic(client), BinanceTRPublic(client)
             while self.running:
                 try:
-                    bt_markets, bn_markets = await asyncio.gather(bt.markets(), bn.markets())
+                    now = time.monotonic()
+                    if not self._bt_markets or now - self._markets_refreshed_at >= 900:
+                        self._bt_markets, self._bn_markets = await asyncio.gather(bt.markets(), bn.markets())
+                        self._markets_refreshed_at = now
+                    bt_markets, bn_markets = self._bt_markets, self._bn_markets
                     self.common_pairs = common_try_markets(bt_markets, bn_markets)
                     results = []
                     for base in self.common_pairs:
@@ -49,16 +58,22 @@ class MarketScanner:
                                 safety_buffer_rate=Decimal("0.0010"), min_profit_rate=self.min_profit_rate)
                             raw = asdict(item)
                             results.append({key: str(value) if isinstance(value, Decimal) else value for key, value in raw.items()})
-                        await asyncio.sleep(0.10)
+                        # BTCTürk's public limit is shared across all pairs. One
+                        # pair per second avoids the burst that caused 429s in v0.2.
+                        await asyncio.sleep(1.05)
                     self.opportunities = sorted(results, key=lambda x: Decimal(x["net_profit_try"]), reverse=True)
                     self.last_success_ms = int(time.time() * 1000)
+                    self.snapshot_id += 1
                     self.last_error = None
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     self.last_error = type(exc).__name__
                     log.warning("market scan failed: %s", type(exc).__name__)
-                await asyncio.sleep(30)
+                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {418, 429}:
+                        retry_after = int(exc.response.headers.get("Retry-After", "60"))
+                        await asyncio.sleep(min(max(retry_after, 30), 300))
+                await asyncio.sleep(self.cycle_pause_seconds)
 
     def stop(self) -> None:
         self.running = False
