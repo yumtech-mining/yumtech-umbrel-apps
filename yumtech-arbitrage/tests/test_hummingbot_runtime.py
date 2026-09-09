@@ -19,6 +19,7 @@ def test_hummingbot_runtime_is_pinned_idle_and_reporting_disabled():
     assert "0001-disable-telemetry-by-default.patch" in dockerfile
     assert "YUMTECH_LIVE_TRADING_ENABLED=false" in dockerfile
     assert "YUMTECH_LIVE_TRADING_ENABLED,," in entrypoint
+    assert "/home/hummingbot/conf/connectors" in entrypoint
     assert "anonymized_metrics_mode: anonymized_metrics_disabled" in entrypoint
     assert "YUMTECH_TELEMETRY_DISABLED: \"true\"" in compose
     assert 'command: ["python", "-u", "/opt/yumtech-control-supervisor.py"]' in compose
