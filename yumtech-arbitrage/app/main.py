@@ -119,7 +119,8 @@ def health():
             "scanner": scanner.running, "last_success_ms": scanner.last_success_ms,
             "market_snapshot_id": scanner.snapshot_id,
             "paper_coordinator": bool(paper_coordinator and paper_coordinator.running),
-            "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None}
+            "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None,
+            "market_data": scanner.market_data_health()}
 
 
 @app.get("/api/bootstrap")
@@ -242,7 +243,8 @@ async def test_credentials(exchange: str, user: dict = Depends(require_csrf)):
 def opportunities(user: dict = Depends(current_user)):
     return {"common_pair_count": len(scanner.common_pairs), "pairs": scanner.common_pairs,
             "items": scanner.opportunities, "last_success_ms": scanner.last_success_ms,
-            "snapshot_id": scanner.snapshot_id, "error": scanner.last_error}
+            "snapshot_id": scanner.snapshot_id, "error": scanner.last_error,
+            "market_data": scanner.market_data_health()}
 
 
 @app.put("/api/settings/test")

@@ -8,6 +8,7 @@ import httpx
 
 from .domain import calculate_opportunity
 from .exchanges import BTCTurkPublic, BinanceTRPublic, common_try_markets
+from .market_stream import OrderBookStore, PublicMarketStreams
 
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ class MarketScanner:
         self._markets_refreshed_at = 0.0
         self._bt_markets = {}
         self._bn_markets = {}
+        self.books = OrderBookStore()
+        self.streams = PublicMarketStreams(self.books)
+        self.rest_fallback_count = 0
 
     async def run(self) -> None:
         self.running = True
@@ -42,10 +46,24 @@ class MarketScanner:
                         self._markets_refreshed_at = now
                     bt_markets, bn_markets = self._bt_markets, self._bn_markets
                     self.common_pairs = common_try_markets(bt_markets, bn_markets)
+                    self.streams.sync(bt_markets, bn_markets, self.common_pairs)
                     results = []
                     for base in self.common_pairs:
-                        bt_book, bn_book = await asyncio.gather(
-                            bt.order_book(bt_markets[base]), bn.order_book(bn_markets[base]))
+                        bt_book = self.books.get("btcturk", base)
+                        bn_book = self.books.get("binance_tr", base)
+                        missing = []
+                        if bt_book is None:
+                            missing.append(("btcturk", bt.order_book(bt_markets[base])))
+                        if bn_book is None:
+                            missing.append(("binance_tr", bn.order_book(bn_markets[base])))
+                        if missing:
+                            fallback = await asyncio.gather(*(request for _, request in missing))
+                            self.rest_fallback_count += len(fallback)
+                            for (exchange, _), book in zip(missing, fallback):
+                                if exchange == "btcturk":
+                                    bt_book = book
+                                else:
+                                    bn_book = book
                         directions = (
                             ("BTCTürk", "Binance TR", bt_book[0], bn_book[1], bt_markets[base].amount_step),
                             ("Binance TR", "BTCTürk", bn_book[0], bt_book[1], bn_markets[base].amount_step),
@@ -58,9 +76,10 @@ class MarketScanner:
                                 safety_buffer_rate=Decimal("0.0010"), min_profit_rate=self.min_profit_rate)
                             raw = asdict(item)
                             results.append({key: str(value) if isinstance(value, Decimal) else value for key, value in raw.items()})
-                        # BTCTürk's public limit is shared across all pairs. One
-                        # pair per second avoids the burst that caused 429s in v0.2.
-                        await asyncio.sleep(1.05)
+                        # REST fallback remains deliberately slow; WS books do
+                        # not need this pause.
+                        if missing:
+                            await asyncio.sleep(1.05)
                     self.opportunities = sorted(results, key=lambda x: Decimal(x["net_profit_try"]), reverse=True)
                     self.last_success_ms = int(time.time() * 1000)
                     self.snapshot_id += 1
@@ -77,3 +96,8 @@ class MarketScanner:
 
     def stop(self) -> None:
         self.running = False
+        self.streams.stop()
+
+    def market_data_health(self) -> dict:
+        return {"feeds": self.books.health(), "rest_fallback_count": self.rest_fallback_count,
+                "common_pair_count": len(self.common_pairs)}

@@ -27,12 +27,17 @@ function renderOpportunities(payload){
       <td><span class="status-pill ${x.executable?"":"observe"}">${x.executable?"PAPER UYGUN":"İZLE"}</span></td>`;
     rows.appendChild(tr);
   }
-  const ok=Boolean(payload.last_success_ms);
-  $("#scanner-health").textContent=ok?"İyi":"Bekliyor";
-  $("#scanner-age").textContent=ok?`Son tam tarama ${new Date(payload.last_success_ms).toLocaleTimeString("tr-TR")}`:"Public veriler bekleniyor";
-  $("#bt-health").textContent=$("#bn-health").textContent=ok?"Bağlı":"Bekliyor";
+  const ok=Boolean(payload.last_success_ms),feeds=payload.market_data?.feeds||{};
+  const feedState=(name)=>{const feed=feeds[name]||{};if(!feed.connected)return "Kesik";if(feed.age_ms==null)return "Bağlanıyor";return feed.age_ms<10000?`${Math.max(0,feed.age_ms)} ms`:`Eski veri · ${Math.round(feed.age_ms/1000)} sn`};
+  const btOk=Boolean(feeds.btcturk?.connected&&feeds.btcturk?.age_ms<10000);
+  const bnOk=Boolean(feeds.binance_tr?.connected&&feeds.binance_tr?.age_ms<10000);
+  $("#scanner-health").textContent=ok&&btOk&&bnOk?"Gerçek zamanlı":ok?"REST yedekli":"Bekliyor";
+  $("#scanner-age").textContent=ok?`Son hesaplama ${new Date(payload.last_success_ms).toLocaleTimeString("tr-TR")} · REST yedek ${payload.market_data?.rest_fallback_count||0}`:"Public veriler bekleniyor";
+  $("#bt-health").textContent=feedState("btcturk");
+  $("#bn-health").textContent=feedState("binance_tr");
   $("#scan-health").textContent=ok?"Aktif":"Başlıyor";
-  document.querySelectorAll(".health-panel i").forEach((dot,index)=>dot.classList.toggle("good",ok&&index<3));
+  const dots=document.querySelectorAll(".health-panel i");
+  dots[0]?.classList.toggle("good",btOk);dots[1]?.classList.toggle("good",bnOk);dots[2]?.classList.toggle("good",ok);
 }
 
 function renderAccount(data){
@@ -47,7 +52,7 @@ function renderAccount(data){
 
 async function renderQualification(){
   const result=await api("/api/live/qualification");const list=$("#qualification-list");list.textContent="";
-  const failures=result.failures||[];$(".score").textContent=result.eligible?"7/7":`${Math.max(0,7-failures.length)}/7`;
+  const failures=result.failures||[],gateCount=8;$(".score").textContent=result.eligible?`${gateCount}/${gateCount}`:`${Math.max(0,gateCount-failures.length)}/${gateCount}`;
   const messages=failures.length?failures:["Bütün canlı işlem kapıları tamamlandı"];
   messages.slice(0,5).forEach(message=>{const li=document.createElement("li");li.innerHTML=`<span>${failures.length?"!":"✓"}</span><div><strong>${escapeHtml(message)}</strong><small>${failures.length?"Canlı mod kilitli":"Yerel onay gerekli"}</small></div>`;list.appendChild(li)});
   return result;
