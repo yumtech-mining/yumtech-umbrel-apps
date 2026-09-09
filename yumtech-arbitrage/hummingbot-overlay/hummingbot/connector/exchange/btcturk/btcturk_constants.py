@@ -3,6 +3,8 @@ from hummingbot.core.data_type.in_flight_order import OrderState
 
 EXCHANGE_NAME = "btcturk"
 DEFAULT_DOMAIN = "com"
+HBOT_ORDER_ID_PREFIX = "YUMTECH-BT-"
+MAX_ORDER_ID_LEN = 36
 
 REST_URL = "https://api.btcturk.com"
 WSS_PUBLIC_URL = "wss://ws-feed-pro.btcturk.com"
@@ -20,6 +22,7 @@ ORDER_PATH_URL = "/order"
 OPEN_ORDERS_PATH_URL = "/openOrders"
 ALL_ORDERS_PATH_URL = "/allOrders"
 USER_TRADES_PATH_URL = "/users/transactions/trade"
+PING_PATH_URL = "/server/exchangeinfo"
 
 ORDER_STATE = {
     "untouched": OrderState.OPEN,

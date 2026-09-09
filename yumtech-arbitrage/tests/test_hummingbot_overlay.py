@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,3 +55,49 @@ def test_btcturk_private_endpoints_share_a_global_throttle_pool():
     ).read_text()
     assert "LinkedLimitWeightPair(PRIVATE_POOL)" in constants
     assert "USER_TRADES_PATH_URL" in constants
+
+
+def test_btcturk_order_lifecycle_parsers():
+    parser_path = (
+        ROOT
+        / "hummingbot-overlay"
+        / "hummingbot"
+        / "connector"
+        / "exchange"
+        / "btcturk"
+        / "btcturk_parsers.py"
+    )
+    spec = importlib.util.spec_from_file_location("btcturk_parsers", parser_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    balances = module.parse_balances({"data": [
+        {"asset": "try", "balance": "250.25", "free": "200.10"}
+    ]})
+    assert balances[0].asset == "TRY"
+    assert str(balances[0].available) == "200.10"
+    assert module.normalize_order_status("PARTIALLY_FILLED") == "partial"
+    assert module.order_id({"orderId": 42}) == "42"
+
+
+def test_btcturk_exchange_implements_rest_lifecycle_contract():
+    exchange = (
+        ROOT
+        / "hummingbot-overlay"
+        / "hummingbot"
+        / "connector"
+        / "exchange"
+        / "btcturk"
+        / "btcturk_exchange.py"
+    ).read_text()
+    for method in (
+        "_place_order",
+        "_place_cancel",
+        "_request_order_status",
+        "_all_trade_updates_for_order",
+        "_update_balances",
+        "_update_trading_fees",
+        "_format_trading_rules",
+    ):
+        assert f"def {method}(" in exchange
