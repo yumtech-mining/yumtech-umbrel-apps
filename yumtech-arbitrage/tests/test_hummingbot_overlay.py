@@ -101,3 +101,13 @@ def test_btcturk_exchange_implements_rest_lifecycle_contract():
         "_format_trading_rules",
     ):
         assert f"def {method}(" in exchange
+
+
+def test_binance_tr_uses_current_local_exchange_endpoints():
+    constants = (ROOT / "hummingbot-overlay" / "hummingbot" / "connector" / "exchange"
+                 / "binance_tr" / "binance_tr_constants.py").read_text()
+    assert 'OPEN_REST_URL = "https://www.binance.tr"' in constants
+    assert 'ORDER_PATH_URL = "/open/v1/orders"' in constants
+    assert 'ACCOUNT_PATH_URL = "/open/v1/account/spot"' in constants
+    assert 'LISTEN_TOKEN_PATH_URL = "/open/v1/user-listen-token"' in constants
+    assert 'PUBLIC_WS_URL = "wss://stream-cloud.binance.tr/ws"' in constants
