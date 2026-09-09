@@ -23,7 +23,7 @@ bilinçli olarak dağıtıma alınmamıştır.
 
 ## Umbrel'e kurulum
 
-Dal ana dala alınıp `0.2.0` çok-mimarili imajı oluşturulduktan sonra Umbrel'de
+Dal ana dala alınıp `0.2.1` çok-mimarili imajı oluşturulduktan sonra Umbrel'de
 Community App Store kaynağı olarak şu adres eklenir:
 
 ```text

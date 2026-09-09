@@ -40,7 +40,7 @@ async def lifespan(_: FastAPI):
         pass
 
 
-app = FastAPI(title="YUMTECH Arbitrage", version="0.2.0", lifespan=lifespan,
+app = FastAPI(title="YUMTECH Arbitrage", version="0.2.1", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 
