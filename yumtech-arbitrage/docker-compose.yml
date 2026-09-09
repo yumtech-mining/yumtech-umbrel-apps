@@ -24,6 +24,7 @@ services:
       retries: 3
 
   app_proxy:
+    image: getumbrel/app-proxy:1.7.0
     environment:
       APP_HOST: yumtech-arbitrage_dashboard_1
       APP_PORT: 8098
