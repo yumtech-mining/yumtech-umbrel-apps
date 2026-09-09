@@ -107,6 +107,9 @@ def _ensure_password(conf_dir: Path) -> None:
 
 def _prepare_configs(config: dict, conf_dir: Path, data_dir: Path) -> Path:
     conf_dir.mkdir(parents=True, exist_ok=True)
+    # The conf directory is a bind mount on Umbrel; Hummingbot expects this
+    # child directory during Security.login even before connector secrets exist.
+    (conf_dir / "connectors").mkdir(parents=True, exist_ok=True)
     scripts_dir = conf_dir / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
     pairs = config.get("trading_pairs", [])

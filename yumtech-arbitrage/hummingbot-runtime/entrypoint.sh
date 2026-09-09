@@ -2,7 +2,7 @@
 set -euo pipefail
 
 status_file="${YUMTECH_STATUS_FILE:-/home/hummingbot/yumtech-data/hummingbot-status.json}"
-mkdir -p "$(dirname -- "$status_file")" /home/hummingbot/conf
+mkdir -p "$(dirname -- "$status_file")" /home/hummingbot/conf /home/hummingbot/conf/connectors
 if [[ ! -e /home/hummingbot/conf/conf_client.yml ]]; then
   install -m 0600 /opt/yumtech-conf_client.yml /home/hummingbot/conf/conf_client.yml
 fi
