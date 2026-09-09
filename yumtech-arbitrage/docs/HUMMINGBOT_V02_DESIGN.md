@@ -167,7 +167,22 @@ Raspberry Pi 5 4 GB hedefinde iki Hummingbot süreci eşzamanlı çalıştırıl
 profili seçilebilir. Eşzamanlı iki profil için daha fazla bellekli ayrı bir
 sunucu gerekir.
 
-## 8.2 Testten canlı moda geçiş
+## 8.2 BOT sayfası ve TRY bütçesi
+
+Dashboard'daki **BOT** sekmesi her kullanıcının iki API kasasını ve borsa
+başına paper işlem bütçesini birlikte yönetir. Bütçe TRY olarak saklanır;
+BTCTürk veya Binance TR'de alış yönü seçildiğinde güncel VWAP'a bölünerek
+Hummingbot'un beklediği base miktarına çevrilir. Aynı miktar satış bacağının
+TRY bütçesini de aşamaz; genel işlem ve kurtarma limitleri daha sıkıysa onlar
+uygulanır.
+
+Bu ekran Hummingbot hostunu `test-ready` konumuna getirir; v0.3.2'de host
+strateji veya canlı emir başlatmaz. Gerçek Hummingbot controller'ının
+`order_amount` alanına bu dönüştürülmüş base miktarını verme adımı, bağlayıcı
+fixture ve tek-bacak tatbikatları tamamlandıktan sonra ayrı bir canlı-yürütme
+sürümünde açılacaktır.
+
+## 8.3 Testten canlı moda geçiş
 
 Her yeni kullanıcı ve her yeniden kurulum `test` modunda başlar. Canlı düğmesi
 aşağıdaki yeterlilik kaydı oluşmadan etkinleşmez:

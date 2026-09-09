@@ -35,3 +35,9 @@ hesapta dolum/mutabakat tatbikatı yapılana kadar kapı `false` kalır.
 - bağlantı kesilmesi, kısmi gerçekleşme ve yeniden başlatma tatbikatları;
 - işlem, günlük zarar ve tek-bacak kurtarma limitleri;
 - Hummingbot telemetri ve hata raporlamasının kapalı olduğunun doğrulanması.
+
+BOT sayfasındaki BTCTürk ve Binance TR TRY bütçeleri iki ayrı üst sınırdır.
+Paper yürütme, seçilen yönün alış ve satış bacaklarını bu sınırların altında
+tutar; daha küçük genel risk limiti veya kullanılabilir bakiye varsa en küçük
+limit uygulanır. Kullanıcının girdiği TRY tutarı doğrudan `quantity` olarak
+gönderilmez; güncel VWAP ve piyasa hassasiyeti ile base miktarına çevrilir.

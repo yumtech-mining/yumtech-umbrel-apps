@@ -2,7 +2,7 @@ manifestVersion: "1.0.0"
 id: yumtech-arbitrage
 category: finance
 name: YUMTECH Arbitrage
-version: "0.3.1"
+version: "0.3.2"
 icon: "https://raw.githubusercontent.com/yumtech-mining/yumtech-umbrel-apps/main/yumtech-arbitrage/icon.png"
 tagline: BTCTürk ve Binance TR için yerel arbitraj kontrol merkezi
 description: >-
@@ -16,7 +16,8 @@ description: >-
 releaseNotes: >-
   Hummingbot v2.16.0 ARM64 motoru, yerel ve telemetrisi kapalı test hostu olarak
   çalışır; BTCTürk market BUY TRY preflight'i, kontrol köprüsü, kalıcı yeterlilik
-  sayaçları ve kapsamlı mobil dashboard eklendi. Canlı emir bu sürümde kilitli.
+  sayaçları, sayfa tabanlı mobil dashboard ve BOT sekmesinde per-borsa TRY bütçesi
+  eklendi. Canlı emir bu sürümde kilitli.
 developer: YUMTECH
 website: https://github.com/yumtech-mining/yumtech-umbrel-apps
 repo: https://github.com/yumtech-mining/yumtech-umbrel-apps

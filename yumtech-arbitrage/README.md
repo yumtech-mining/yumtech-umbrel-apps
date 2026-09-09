@@ -3,9 +3,9 @@
 BTCTürk ve Binance TR arasında ortak aktif TRY paritelerini izleyen, Hummingbot
 tabanlı ve Umbrel için paketlenen yerel arbitraj uygulaması.
 
-## v0.3.1 mühendislik önizlemesi
+## v0.3.2 mühendislik önizlemesi
 
-Bu sürüm Umbrel paketi, mobil dashboard, bütün ortak TRY pariteleri için public
+Bü sürüm Umbrel paketi, sayfa tabanlı ve mobil dashboard, bütün ortak TRY pariteleri için public
 derinlik taraması, WebSocket öncelikli piyasa verisi, Decimal tabanlı net kâr
 hesabı, çok kullanıcılı oturumlar ve AES-256-GCM şifreli yerel API anahtar kasası
 içerir. Resmî ARM64 `hummingbot/hummingbot:v2.16.0` motoru ayrı bir servis olarak
@@ -17,6 +17,10 @@ başlatma ve canlı emir bu sürümde kapalıdır.
 - Varsayılan çalışma modu her kurulum ve yeniden başlatmada `test`tir.
 - Canlı moda geçiş, test yeterliliği ve açık kullanıcı onayı gerektirir.
 - Kullanıcıların API anahtarları birbirinden ayrılmış biçimde cihazda şifrelenir.
+- **BOT** sayfasında BTCTürk ve Binance TR anahtarları cihaza gönderilmeden şifrelenir,
+  bağlantı testi yapılır ve her profil için borsa başına TRY kotası ayarlanır.
+- Kullanıcı TRY bütçesi girer; paper motoru bunu güncel VWAP ile Hummingbot'un
+  kullandığı base miktarına çevirir. Bütçe iki bacakta da üst sınırdır.
 - Çekim yetkisine ihtiyaç yoktur; borsa tarafında bu yetki kapatılmalıdır.
 - Hummingbot anonim metrikleri ve hata raporlaması kapalıdır.
 - BTCTürk market BUY için TRY dönüşümü, bakiye/precision/minimum/maksimum
@@ -26,7 +30,7 @@ başlatma ve canlı emir bu sürümde kapalıdır.
 
 ## Umbrel'e kurulum
 
-Dal ana dala alınıp `0.3.0` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
+Dal ana dala alınıp `0.3.2` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
 Community App Store kaynağı olarak şu adres eklenir:
 
 ```text

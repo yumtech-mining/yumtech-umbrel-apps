@@ -64,7 +64,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:0.3.1
+            ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:0.3.2
             ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -89,7 +89,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:0.3.1
+            ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:0.3.2
             ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:latest
           cache-from: type=gha,scope=hummingbot
           cache-to: type=gha,mode=max,scope=hummingbot

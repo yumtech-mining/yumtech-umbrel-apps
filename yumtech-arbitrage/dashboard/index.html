@@ -3,220 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#071416">
+  <meta name="theme-color" content="#061012">
+  <meta name="description" content="YUMTECH Arbitrage yerel kontrol merkezi">
   <title>YUMTECH Arbitrage</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar" aria-label="Ana menü">
-      <a class="brand" href="#overview" aria-label="YUMTECH Arbitrage ana sayfa">
+      <a class="brand" href="#overview" data-view="overview" aria-label="YUMTECH Arbitrage ana sayfa">
         <span class="brand-mark">Y</span>
         <span><small>YUMTECH</small><strong>ARBITRAGE</strong></span>
       </a>
-      <nav>
-        <a class="nav-item active" href="#overview" data-view="overview"><span>◫</span> Genel Bakış</a>
-        <a class="nav-item" href="#markets" data-view="markets"><span>⌁</span> Fırsatlar</a>
-        <a class="nav-item" href="#trades" data-view="trades"><span>⇄</span> İşlemler</a>
-        <a class="nav-item" href="#wallets" data-view="wallets"><span>◈</span> Cüzdanlar</a>
-        <a class="nav-item" href="#accounts" data-view="accounts"><span>⌘</span> API Hesapları</a>
-        <a class="nav-item" href="#risk" data-view="risk"><span>◇</span> Risk ve Ayarlar</a>
-        <a class="nav-item" href="#system" data-view="system"><span>◉</span> Sistem</a>
+      <div class="nav-caption">ÇALIŞMA ALANI</div>
+      <nav id="side-nav">
+        <a class="nav-item active" href="#overview" data-view="overview"><span>◫</span><b>Genel Bakış</b></a>
+        <a class="nav-item" href="#markets" data-view="markets"><span>⌁</span><b>Fırsat Tarayıcı</b></a>
+        <a class="nav-item" href="#trades" data-view="trades"><span>⇄</span><b>İşlemler</b></a>
+        <a class="nav-item" href="#wallets" data-view="wallets"><span>◈</span><b>Cüzdanlar</b></a>
+        <a class="nav-item bot-nav" href="#bot" data-view="bot"><span>⚙</span><b>BOT</b><em>Hummingbot</em></a>
       </nav>
-      <div class="sidebar-foot">
-        <span class="privacy-dot"></span>
-        <div><strong>Telemetri kapalı</strong><small>Veriler bu cihazda kalır</small></div>
-      </div>
+      <div class="nav-caption secondary-caption">YÖNETİM</div>
+      <nav>
+        <a class="nav-item" href="#accounts" data-view="accounts"><span>⌘</span><b>Hesaplar</b></a>
+        <a class="nav-item" href="#risk" data-view="risk"><span>◇</span><b>Risk ve Yeterlilik</b></a>
+        <a class="nav-item" href="#system" data-view="system"><span>◉</span><b>Sistem</b></a>
+      </nav>
+      <div class="sidebar-foot"><span class="privacy-dot"></span><div><strong>Telemetri kapalı</strong><small>Veriler bu cihazda kalır</small></div></div>
     </aside>
 
     <main>
       <header class="topbar">
-        <div>
-          <p class="eyebrow">YUMTECH / <span id="current-user">Oturum bekleniyor</span></p>
-          <h1>Arbitraj Kontrol Merkezi</h1>
-        </div>
-        <div class="top-actions">
-          <div class="mode-control" aria-label="İşlem modu">
-            <button id="test-mode" class="mode active" type="button">TEST</button>
-            <button id="live-mode" class="mode" type="button">CANLI</button>
-          </div>
-          <button class="icon-btn" id="account-button" type="button" aria-label="Kullanıcı menüsü">ÜY</button>
-        </div>
+        <div class="page-heading"><p class="eyebrow">YUMTECH / <span id="current-user">Oturum bekleniyor</span></p><h1 id="page-title">Genel Bakış</h1><p class="page-subtitle" id="page-subtitle">İki borsadaki ortak TRY piyasalarını güvenli biçimde izleyin.</p></div>
+        <div class="top-actions"><div class="mode-control" role="group" aria-label="İşlem modu"><button id="test-mode" class="mode active" type="button">TEST</button><button id="live-mode" class="mode" type="button">CANLI</button></div><button class="avatar" id="account-button" type="button" aria-label="Hesaplar sayfasını aç">ÜY</button></div>
       </header>
 
-      <section class="notice" id="mode-notice">
-        <div><span class="pulse"></span><strong>Test modu etkin</strong></div>
-        <p>Emirler sanal bakiyelerle simüle ediliyor. Gerçek hesabınıza emir gönderilmez.</p>
-        <button type="button" id="test-details">Test ölçütleri</button>
+      <section class="notice" id="mode-notice" aria-live="polite"><div class="notice-title"><span class="pulse"></span><strong>Test modu etkin</strong></div><p>Paper işlemler sanal bakiyelerle simüle edilir. Gerçek hesabınıza emir gönderilmez.</p><button type="button" id="test-details">Güvenlik kapılarını gör</button></section>
+
+      <section class="page-view active" id="page-overview" data-view-panel="overview">
+        <div class="metric-grid" aria-label="Özet değerler">
+          <article class="metric-card primary"><span>Bugünkü gerçekleşen net</span><strong id="today-pnl">₺0,00</strong><small><b>TEST</b> Gerçek emir gönderilmez</small><div class="spark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+          <article class="metric-card"><span>Uygun fırsat</span><strong id="ready-count">—</strong><small><span id="pair-count">—</span> ortak TRY paritesinde</small></article>
+          <article class="metric-card"><span>Bağlı hesap TRY</span><strong id="available-try">—</strong><small>Doğrulanmış hesapların kullanılabilir toplamı</small></article>
+          <article class="metric-card"><span>Tarayıcı sağlığı</span><strong id="scanner-health" class="healthy">Başlıyor</strong><small id="scanner-age">Public veriler bekleniyor</small></article>
+        </div>
+        <div class="overview-grid">
+          <section class="panel welcome-panel"><div class="welcome-copy"><p class="eyebrow">YEREL KONTROL MERKEZİ</p><h2>Güvenli arbitraj, tek ekranda.</h2><p>Fiyat farklarını, paper performansını ve her iki borsadaki TRY bakiyenizi aynı akışta takip edin.</p></div><div class="welcome-actions"><button class="primary-btn" type="button" data-view="bot">BOT ayarlarını aç</button><button class="secondary" type="button" data-view="markets">Fırsatları incele</button></div><div class="welcome-foot"><span><i class="status-dot good"></i> Public tarama aktif</span><span><i class="status-dot"></i> Canlı emir kilitli</span><span><i class="status-dot good"></i> Anahtar kasası yerel</span></div></section>
+          <section class="panel quick-panel"><div class="panel-head compact"><div><p class="eyebrow">HIZLI DURUM</p><h2>Bugün</h2></div><span class="soft-badge">TEST</span></div><div class="quick-row"><span>Paper işlem</span><b id="overview-trade-count">0</b></div><div class="quick-row"><span>Kârlı işlem</span><b id="overview-profitable-count">0</b></div><div class="quick-row"><span>Hummingbot</span><b id="overview-hb-status">Bekliyor</b></div><button class="text-btn" type="button" data-view="trades">Tüm kayıtları aç →</button></section>
+          <section class="panel overview-opportunities"><div class="panel-head"><div><p class="eyebrow">CANLI TARAMA</p><h2>En iyi fırsatlar</h2></div><button class="text-btn" type="button" data-view="markets">Tümünü aç →</button></div><div class="table-wrap"><table><thead><tr><th>Parite</th><th>Yön</th><th>Net fark</th><th>Tahmini net</th><th>Durum</th></tr></thead><tbody id="overview-opportunity-rows"></tbody></table></div></section>
+          <section class="panel overview-activity"><div class="panel-head"><div><p class="eyebrow">KAYITLAR</p><h2>Son işlemler</h2></div><button class="text-btn" type="button" data-view="trades">Geçmiş →</button></div><div class="trade-list compact-list" id="overview-trade-list"></div></section>
+        </div>
       </section>
 
-      <section class="metric-grid" id="overview" aria-label="Özet değerler">
-        <article class="metric-card primary">
-          <span>Bugünkü net sonuç</span><strong id="today-pnl">₺0,00</strong>
-          <small><b>TEST</b> Gerçekleşen işlem yok</small>
-          <div class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        </article>
-        <article class="metric-card">
-          <span>Uygun fırsat</span><strong id="ready-count">—</strong><small><span id="pair-count">—</span> ortak TRY paritesinde</small>
-        </article>
-        <article class="metric-card">
-          <span>Kullanılabilir TRY</span><strong id="available-try">—</strong><small>İki doğrulanmış hesabın toplamı</small>
-        </article>
-        <article class="metric-card">
-          <span>Tarayıcı sağlığı</span><strong id="scanner-health" class="healthy">Başlıyor</strong><small id="scanner-age">Public veriler bekleniyor</small>
-        </article>
+      <section class="page-view" id="page-markets" data-view-panel="markets" hidden><div class="page-intro"><div><p class="eyebrow">PİYASA İSTASYONU</p><h2>Fırsat tarayıcı</h2><p>BTCTürk ve Binance TR’de ortak aktif TRY pariteleri, ücret ve güvenlik payı düşüldükten sonra listelenir.</p></div><div class="filters" role="group" aria-label="Fırsat filtresi"><button class="chip active" type="button" data-market-filter="all">Tümü</button><button class="chip" type="button" data-market-filter="executable">Paper uygun</button><button class="chip" type="button" data-market-filter="watch">İzle</button></div></div><section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>Parite</th><th>Alış → satış</th><th>Net fark</th><th>Derinlik</th><th>Tahmini net</th><th>Durum</th></tr></thead><tbody id="opportunity-rows"></tbody></table></div><p class="table-note" id="markets-note">İlk tam derinlik taraması bekleniyor.</p></section></section>
+
+      <section class="page-view" id="page-trades" data-view-panel="trades" hidden><div class="page-intro"><div><p class="eyebrow">İŞLEM GÜNLÜĞÜ</p><h2>Paper işlem geçmişi</h2><p>Her işlem niyeti, iki bacak durumu, zaman damgası ve gerçekleşen net sonucu ile yerel olarak saklanır.</p></div><span class="soft-badge">GERÇEK EMİR YOK</span></div><section class="panel table-panel"><div class="trade-table-head"><span>Parite / zaman</span><span>Yön ve durum</span><span>İstenen miktar</span><span>Gerçekleşen net</span></div><div class="trade-list full-list" id="trade-list"></div></section></section>
+
+      <section class="page-view" id="page-wallets" data-view-panel="wallets" hidden><div class="page-intro"><div><p class="eyebrow">VARLIK MERKEZİ</p><h2>Cüzdanlar</h2><p>Yalnızca doğrulanmış API anahtarlarının salt okuma bakiyeleri gösterilir. Çekim işlemi uygulamada yoktur.</p></div><button class="secondary" type="button" id="refresh-balances">↻ Bakiyeleri yenile</button></div><div class="wallet-grid"><section class="panel wallet-card"><div class="wallet-heading"><div class="exchange-logo bt">B</div><div><h3>BTCTürk</h3><small id="bt-status">API anahtarı bekleniyor</small></div><strong id="bt-balance">—</strong></div><div class="bar"><i id="bt-bar" style="width:0%"></i></div><div class="asset-list" id="bt-assets"><small>Varlık bakiyesi bekleniyor</small></div><div class="wallet-meta"><span>TRY kullanılabilir</span><b id="bt-wallet-updated">—</b></div></section><section class="panel wallet-card"><div class="wallet-heading"><div class="exchange-logo bn">TR</div><div><h3>Binance TR</h3><small id="bn-status">API anahtarı bekleniyor</small></div><strong id="bn-balance">—</strong></div><div class="bar binance"><i id="bn-bar" style="width:0%"></i></div><div class="asset-list" id="bn-assets"><small>Varlık bakiyesi bekleniyor</small></div><div class="wallet-meta"><span>TRY kullanılabilir</span><b id="bn-wallet-updated">—</b></div></section></div><section class="panel wallet-help"><p class="eyebrow">GÜVENLİK NOTU</p><h3>Bakiyeler neden boş görünebilir?</h3><p>Anahtarlar önce BOT sayfasında kaydedilip doğrulanmalıdır. Borsa ayarlarından “withdrawal / çekim” yetkisini kapatın; sadece okuma ve spot işlem izni verin.</p><button class="primary-btn" type="button" data-view="bot">BOT anahtarlarını yönet</button></section></section>
+
+      <section class="page-view" id="page-bot" data-view-panel="bot" hidden><div class="page-intro bot-intro"><div><p class="eyebrow">YÜRÜTME KONTROLÜ</p><h2>BOT · Hummingbot</h2><p>Test motoru, API kasası ve borsa başına TRY işlem bütçesi bu sayfadan yönetilir.</p></div><span class="engine-badge"><i class="status-dot good"></i> v2.16.0 host</span></div>
+        <section class="bot-status panel"><div><p class="eyebrow">MOTOR DURUMU</p><h3 id="bot-runtime-state">Bekliyor</h3><p id="hummingbot-note">Hummingbot hostu test kontrolü için hazırdır; canlı emir kapalıdır.</p></div><div class="bot-status-meta"><span>Strateji</span><b id="bot-strategy">idle</b><span>Gönderilen emir</span><b id="bot-orders">0</b></div><div class="hb-controls"><button type="button" class="primary-btn" data-hb-action="start_test">Test motorunu hazırla</button><button type="button" class="secondary" data-hb-action="refresh">Durumu yenile</button><button type="button" class="danger" data-hb-action="emergency_stop">Acil durdur</button></div></section>
+        <div class="bot-grid"><section class="panel credentials-panel"><div class="panel-head"><div><p class="eyebrow">ŞİFRELİ KASA</p><h3>Borsa API anahtarları</h3></div><span class="soft-badge">ÇEKİM KAPALI</span></div><p class="panel-note intro-note">Anahtarlar yalnızca bu Umbrel cihazında AES-256-GCM ile şifrelenir. Kaydettiğinizde bağlantı testi otomatik çalışır; gizli değerler tekrar gösterilmez.</p><form class="credential-form" data-exchange="btcturk" autocomplete="off"><div class="exchange-line"><div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-key-state">Bağlı değil</small></div></div><label>API key<input data-field="api_key" required minlength="8" maxlength="512" spellcheck="false" autocomplete="off"></label><label>Private / secret key<input data-field="api_secret" type="password" required minlength="8" maxlength="1024" autocomplete="new-password"></label><div class="form-row"><button class="primary-btn" type="submit">Şifrele ve doğrula</button><span class="form-status" data-credential-status>Bağlantı bekleniyor</span></div></form><form class="credential-form" data-exchange="binance_tr" autocomplete="off"><div class="exchange-line"><div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-key-state">Bağlı değil</small></div></div><label>API key<input data-field="api_key" required minlength="8" maxlength="512" spellcheck="false" autocomplete="off"></label><label>Private / secret key<input data-field="api_secret" type="password" required minlength="8" maxlength="1024" autocomplete="new-password"></label><div class="form-row"><button class="primary-btn" type="submit">Şifrele ve doğrula</button><span class="form-status" data-credential-status>Bağlantı bekleniyor</span></div></form></section><section class="panel bot-settings-panel"><div class="panel-head"><div><p class="eyebrow">EMİR BÜTÇESİ</p><h3>TRY başına işlem limiti</h3></div><span class="soft-badge">TEST</span></div><p class="panel-note intro-note">Bu değerler her borsadaki tek bacak için azami TRY bütçesidir. Hummingbot base miktarıyla çalışır; uygulama güncel VWAP üzerinden TRY bütçesini güvenli biçimde coin miktarına dönüştürür.</p><form id="bot-settings-form" class="bot-form"><label>Paper motoru<select id="bot-active"><option value="true">Otomatik paper açık</option><option value="false">Yalnızca fırsatları izle</option></select></label><label>BTCTürk azami TRY<input id="budget-btcturk" inputmode="decimal" pattern="\d+(\.\d{1,2})?" min="1" required></label><label>Binance TR azami TRY<input id="budget-binance" inputmode="decimal" pattern="\d+(\.\d{1,2})?" min="1" required></label><div class="budget-preview"><span>İşlem başına toplam üst sınır</span><strong id="budget-preview-value">₺0,00</strong><small>Gerçek tutar ayrıca genel risk limiti ve kullanılabilir bakiye ile sınırlandırılır.</small></div><button class="primary-btn" type="submit">BOT ayarlarını kaydet</button><small class="form-error" id="bot-error" role="alert"></small><small class="form-success" id="bot-saved" role="status"></small></form></section></div>
+        <section class="panel bot-explain"><p class="eyebrow">NASIL ÇALIŞIR?</p><div class="explain-grid"><div><b>1</b><span>Fiyat taraması</span><small>Ortak TRY pariteleri ve derinlik</small></div><div><b>2</b><span>TRY → coin dönüşümü</span><small>VWAP, precision ve bütçe kontrolü</small></div><div><b>3</b><span>Paper yürütme</span><small>İki bacak ve kurtarma günlüğü</small></div><div><b>4</b><span>Canlı kapısı</span><small>Yeterlilik tamamlanana kadar kilitli</small></div></div></section>
       </section>
 
-      <div class="dashboard-grid">
-        <section class="panel opportunities" id="markets">
-          <div class="panel-head">
-            <div><p class="eyebrow">CANLI TARAMA</p><h2>En iyi fırsatlar</h2></div>
-            <div class="filters">
-              <button class="chip active" type="button">Tümü</button>
-              <button class="chip" type="button">Uygun</button>
-              <button class="chip" type="button">İzle</button>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Parite</th><th>Yön</th><th>Net fark</th><th>Derinlik</th><th>Tahmini net</th><th>Durum</th></tr></thead>
-              <tbody id="opportunity-rows"></tbody>
-            </table>
-          </div>
-        </section>
+      <section class="page-view" id="page-accounts" data-view-panel="accounts" hidden><div class="page-intro"><div><p class="eyebrow">YEREL PROFİLLER</p><h2>Hesaplar ve kullanıcılar</h2><p>Her kullanıcı kendi API anahtar kasasına, risk ayarlarına ve işlem günlüğüne sahiptir.</p></div><button class="secondary" type="button" data-view="bot">BOT anahtarları</button></div><div class="account-layout"><section class="panel profile-card"><div class="profile-avatar">Ü</div><div><p class="eyebrow">AKTİF PROFİL</p><h3 id="profile-name">—</h3><p id="profile-role">Yerel kullanıcı</p></div><span class="soft-badge">CİHAZDA</span></section><section class="panel account-summary-card"><div class="panel-head"><div><p class="eyebrow">BAĞLANTI ÖZETİ</p><h3>API durumları</h3></div><button class="text-btn" type="button" data-view="wallets">Cüzdanları gör →</button></div><div class="account-summary"><span>BTCTürk</span><b id="account-bt-summary">Bağlı değil</b><span>Binance TR</span><b id="account-bn-summary">Bağlı değil</b></div><p class="panel-note">Gizli değerler bu sayfada veya API yanıtlarında gösterilmez.</p></section></div><section class="panel family-card"><div><p class="eyebrow">AYRI ERİŞİM</p><h3>Aile kullanıcısı ekle</h3><p>Abiniz kendi kullanıcı adı, parolası ve API anahtarları ile ayrı bir profil açabilir. Pi 5 üzerinde aynı anda yalnızca tek profilin otomatik paper motoru aktif olur.</p></div><button class="primary-btn" type="button" id="add-user-button">Yeni kullanıcı oluştur</button></section></section>
 
-        <aside class="right-rail">
-          <section class="panel guard-card">
-            <div class="panel-head compact"><div><p class="eyebrow">GÜVENLİK</p><h2>İşlem koruması</h2></div><span class="score">0/8</span></div>
-            <ul class="guard-list" id="qualification-list"><li><span>…</span><div><strong>Kontroller yükleniyor</strong><small>Canlı mod varsayılan olarak kilitli</small></div></li></ul>
-            <button class="secondary full" type="button" data-view="risk">Tüm kontrolleri aç</button>
-          </section>
+      <section class="page-view" id="page-risk" data-view-panel="risk" hidden><div class="page-intro"><div><p class="eyebrow">KORUMA KATMANI</p><h2>Risk ve canlı yeterlilik</h2><p>Canlı düğmesi, API bağlantısı ve gözlem sayaçları tamamlanmadan sunucu tarafında açılmaz.</p></div><span class="locked-badge">▣ CANLI KİLİTLİ</span></div><div class="risk-grid"><section class="panel guard-card"><div class="panel-head compact"><div><p class="eyebrow">GÜVENLİK KAPILARI</p><h3>İşlem koruması</h3></div><span class="score">0/8</span></div><ul class="guard-list" id="qualification-list"><li><span>…</span><div><strong>Kontroller yükleniyor</strong><small>Canlı mod varsayılan olarak kilitli</small></div></li></ul></section><section class="panel performance-panel"><div class="panel-head"><div><p class="eyebrow">PERFORMANS</p><h3>Sonuçlar ve risk profili</h3></div><span class="soft-badge">YEREL KAYIT</span></div><div class="stat-grid"><div><span>Toplam net</span><strong id="total-pnl">₺0,00</strong></div><div><span>7 gün</span><strong id="week-pnl">₺0,00</strong></div><div><span>30 gün</span><strong id="month-pnl">₺0,00</strong></div><div><span>Başarılı / toplam</span><strong id="trade-ratio">0 / 0</strong></div></div><div class="qualification-summary" id="qualification-summary">Yeterlilik sayaçları yükleniyor…</div><form class="risk-form" id="risk-form"><label>İşlem üst limiti (TRY)<input id="risk-max" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label><label>Günlük zarar limiti (TRY)<input id="risk-daily" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label><label>Kurtarma zarar limiti (TRY)<input id="risk-recovery" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label><label>Paper otomasyonu<select id="risk-active"><option value="true">Açık</option><option value="false">Kapalı</option></select></label><button class="primary-btn" type="submit">Risk ayarlarını kaydet</button><small class="form-error" id="risk-error" role="alert"></small></form></section></div></section>
 
-          <section class="panel balances-card" id="wallets">
-            <div class="panel-head compact"><div><p class="eyebrow">CÜZDANLAR</p><h2>Borsa dağılımı</h2></div><button class="text-btn" type="button" id="refresh-balances">Yenile</button></div>
-            <div class="exchange-balance">
-              <div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-status">API anahtarı bekleniyor</small></div><b id="bt-balance">—</b>
-            </div>
-            <div class="bar"><i id="bt-bar" style="width:0%"></i></div>
-            <div class="asset-list" id="bt-assets"><small>Bakiye verisi bekleniyor</small></div>
-            <div class="exchange-balance">
-              <div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-status">API anahtarı bekleniyor</small></div><b id="bn-balance">—</b>
-            </div>
-            <div class="bar binance"><i id="bn-bar" style="width:0%"></i></div>
-            <div class="asset-list" id="bn-assets"><small>Bakiye verisi bekleniyor</small></div>
-            <button class="secondary full" type="button" data-view="accounts">API hesaplarını yönet</button>
-          </section>
-        </aside>
-
-        <section class="panel trades-panel" id="trades">
-          <div class="panel-head"><div><p class="eyebrow">KAYITLAR</p><h2>Son arbitraj işlemleri</h2></div><button class="text-btn" type="button">Tümünü gör</button></div>
-          <div class="trade-list" id="trade-list"></div>
-        </section>
-
-        <section class="panel health-panel" id="system">
-          <div class="panel-head"><div><p class="eyebrow">ALTYAPI</p><h2>Borsa bağlantıları</h2></div><span class="live-label">CANLI</span></div>
-          <div class="latency-row"><span>BTCTürk WebSocket</span><b id="bt-health">Bekliyor</b><i></i></div>
-          <div class="latency-row"><span>Binance TR WebSocket</span><b id="bn-health">Bekliyor</b><i></i></div>
-          <div class="latency-row"><span>Public tarama</span><b id="scan-health">Başlıyor</b><i></i></div>
-          <div class="latency-row"><span>Hummingbot v2.16.0 motoru</span><b id="hummingbot-health">Bekliyor</b><i></i></div>
-          <div class="hb-controls" aria-label="Test motoru kontrolleri">
-            <button type="button" class="secondary" data-hb-action="start_test">Test motorunu hazırla</button>
-            <button type="button" class="secondary" data-hb-action="stop">Durdur</button>
-          <button type="button" class="danger" data-hb-action="emergency_stop">Acil durdur</button>
-          </div>
-          <p class="panel-note" id="hummingbot-note">Hummingbot hostu yalnızca test kontrolü için hazırdır; canlı emir kapalıdır.</p>
-          <div class="audit-list" id="audit-list"><small>Denetim kayıtları yükleniyor…</small></div>
-        </section>
-
-        <section class="panel performance-panel" id="risk">
-          <div class="panel-head"><div><p class="eyebrow">PERFORMANS</p><h2>Sonuçlar ve risk profili</h2></div><span class="live-label">YEREL KAYIT</span></div>
-          <div class="stat-grid">
-            <div><span>Toplam net</span><strong id="total-pnl">₺0,00</strong></div>
-            <div><span>7 gün</span><strong id="week-pnl">₺0,00</strong></div>
-            <div><span>30 gün</span><strong id="month-pnl">₺0,00</strong></div>
-            <div><span>Başarılı / toplam</span><strong id="trade-ratio">0 / 0</strong></div>
-          </div>
-          <div class="qualification-summary" id="qualification-summary">Yeterlilik sayaçları yükleniyor…</div>
-          <form class="risk-form" id="risk-form">
-            <label>Test profili <select id="risk-active"><option value="true">Otomatik paper açık</option><option value="false">Otomatik paper kapalı</option></select></label>
-            <label>İşlem üst limiti (TRY)<input id="risk-max" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
-            <label>Günlük zarar limiti (TRY)<input id="risk-daily" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
-            <label>Kurtarma zarar limiti (TRY)<input id="risk-recovery" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
-            <button class="secondary" type="submit">Test ayarlarını kaydet</button>
-            <small class="form-error" id="risk-error" role="alert"></small>
-          </form>
-        </section>
-
-        <section class="panel accounts-panel" id="accounts">
-          <div class="panel-head"><div><p class="eyebrow">HESAPLAR</p><h2>API ve kullanıcı profilleri</h2></div><button class="secondary" type="button" id="open-accounts">Yönet</button></div>
-          <p class="panel-note">Anahtarlar cihaz içinde şifrelenir; çekim yetkisi kullanılmaz. Her kullanıcı kendi anahtar, risk ve işlem günlüğüne sahiptir.</p>
-          <div class="account-summary"><span>BTCTürk</span><b id="account-bt-summary">Bağlı değil</b><span>Binance TR</span><b id="account-bn-summary">Bağlı değil</b></div>
-        </section>
-      </div>
+      <section class="page-view" id="page-system" data-view-panel="system" hidden><div class="page-intro"><div><p class="eyebrow">GÖZLEM VE DENETİM</p><h2>Sistem durumu</h2><p>Bağlantı sağlığı, telemetri kilidi ve değişiklik denetim kayıtları.</p></div><span class="soft-badge">YEREL</span></div><div class="system-grid"><section class="panel health-panel"><div class="panel-head"><div><p class="eyebrow">ALTYAPI</p><h3>Borsa bağlantıları</h3></div><span class="live-label">İZLENİYOR</span></div><div class="latency-row"><span>BTCTürk WebSocket / REST</span><b id="bt-health">Bekliyor</b><i></i></div><div class="latency-row"><span>Binance TR WebSocket / REST</span><b id="bn-health">Bekliyor</b><i></i></div><div class="latency-row"><span>Public fırsat taraması</span><b id="scan-health">Başlıyor</b><i></i></div><div class="latency-row"><span>Hummingbot v2.16.0 hostu</span><b id="hummingbot-health">Bekliyor</b><i></i></div><p class="panel-note">Hummingbot imajı upstream v2.16.0 olarak sabitlenmiştir. Bu sürümde host strateji başlatmaz; paper coordinator uygulama servisinde çalışır.</p></section><section class="panel audit-panel"><div class="panel-head"><div><p class="eyebrow">DENETİM</p><h3>Son sistem olayları</h3></div><span class="soft-badge">SIRALI</span></div><div class="audit-list" id="audit-list"><small>Denetim kayıtları yükleniyor…</small></div></section></div><section class="panel privacy-panel"><div class="privacy-icon">✓</div><div><p class="eyebrow">GİZLİLİK</p><h3>Telemetri ve hata raporlaması kapalı</h3><p>Hummingbot anonim metrikleri kapalıdır. Bilinen raporlama hostları container loopback adresine yönlendirilir; API ve fiyat endpoint'leri çalışmaya devam eder.</p></div></section></section>
     </main>
   </div>
 
-  <nav class="mobile-nav" aria-label="Mobil menü">
-    <a class="active" href="#overview"><span>◫</span>Özet</a><a href="#markets"><span>⌁</span>Fırsat</a>
-    <a href="#trades"><span>⇄</span>İşlem</a><a href="#wallets"><span>◈</span>Cüzdan</a>
-    <button id="mobile-more" type="button"><span>•••</span>Daha</button>
-  </nav>
+  <nav class="mobile-nav" aria-label="Mobil menü"><a class="active" href="#overview" data-view="overview"><span>◫</span>Özet</a><a href="#markets" data-view="markets"><span>⌁</span>Fırsat</a><a href="#bot" data-view="bot"><span>⚙</span>BOT</a><a href="#wallets" data-view="wallets"><span>◈</span>Cüzdan</a><a href="#accounts" data-view="accounts"><span>•••</span>Daha</a></nav>
 
-  <dialog id="live-dialog">
-    <form method="dialog" class="dialog-card">
-      <div class="danger-icon">!</div>
-      <p class="eyebrow">CANLI MOD ONAYI</p>
-      <h2>Gerçek para ile işlem başlayacak</h2>
-      <p>Canlı mod yalnızca API testleri, 72 saatlik gözlem ve risk kontrolleri tamamlandığında açılır. Devam etmek için aşağıdaki ifadeyi yazın.</p>
-      <label>Onay ifadesi<input id="live-confirm" autocomplete="off" placeholder="CANLI İŞLEMİ AÇ"></label>
-      <div class="dialog-actions"><button value="cancel" class="secondary">Vazgeç</button><button value="confirm" id="confirm-live" class="danger" disabled>Canlı modu aç</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="account-dialog">
-    <form method="dialog" class="dialog-card account-card">
-      <div class="panel-head"><div><p class="eyebrow">KİŞİSEL KASA</p><h2>API hesapları</h2></div><button value="cancel" class="close-btn" aria-label="Kapat">×</button></div>
-      <p>Anahtarlar cihaz içinde şifrelenir. Çekim yetkisini borsa tarafında kapatın; uygulama çekim işlemi kullanmaz.</p>
-      <div class="api-box"><div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-key-state">Bağlı değil</small></div><button type="button" class="secondary credential-edit" data-exchange="btcturk">Ekle / değiştir</button></div>
-      <div class="api-box"><div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-key-state">Bağlı değil</small></div><button type="button" class="secondary credential-edit" data-exchange="binance_tr">Ekle / değiştir</button></div>
-      <button type="button" class="secondary full" id="add-user-button">Aile kullanıcısı ekle</button>
-      <button value="cancel" class="primary-btn full">Tamam</button>
-    </form>
-  </dialog>
-
-  <dialog id="auth-dialog">
-    <form id="auth-form" class="dialog-card">
-      <p class="eyebrow">YEREL HESAP</p><h2 id="auth-title">İlk kullanıcıyı oluştur</h2>
-      <p>En az 12 karakterli bir parola kullanın. Bu hesap ve kasası yalnızca Umbrel cihazınızda tutulur.</p>
-      <label>Kullanıcı adı<input id="auth-username" required minlength="3" autocomplete="username"></label>
-      <label>Parola<input id="auth-password" type="password" required minlength="12" autocomplete="new-password"></label>
-      <p class="form-error" id="auth-error" role="alert"></p>
-      <button class="primary-btn full" type="submit">Devam et</button>
-    </form>
-  </dialog>
-
-  <dialog id="credential-dialog">
-    <form id="credential-form" class="dialog-card">
-      <p class="eyebrow">ŞİFRELİ KASA</p><h2 id="credential-title">API anahtarı</h2>
-      <p>Çekim yetkisini borsa ayarlarından kapatın. Anahtarı sohbete veya GitHub'a yazmayın.</p>
-      <label>API key<input id="api-key" required autocomplete="off"></label>
-      <label>Private / secret key<input id="api-secret" type="password" required autocomplete="new-password"></label>
-      <p class="form-error" id="credential-error" role="alert"></p>
-      <div class="dialog-actions"><button class="secondary" type="button" id="credential-cancel">Vazgeç</button><button class="primary-btn" type="submit">Şifreleyip kaydet</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="user-dialog">
-    <form id="user-form" class="dialog-card">
-      <p class="eyebrow">AYRI PROFİL</p><h2>Yeni kullanıcı ekle</h2>
-      <p>Yeni kullanıcının anahtarları, ayarları ve işlem kayıtları ayrı tutulur. Pi 5 4 GB'de aynı anda tek profil çalışır.</p>
-      <label>Kullanıcı adı<input id="new-username" required minlength="3" autocomplete="off"></label>
-      <label>Geçici parola<input id="new-password" type="password" required minlength="12" autocomplete="new-password"></label>
-      <p class="form-error" id="user-error" role="alert"></p>
-      <div class="dialog-actions"><button class="secondary" type="button" id="user-cancel">Vazgeç</button><button class="primary-btn" type="submit">Kullanıcıyı oluştur</button></div>
-    </form>
-  </dialog>
-
+  <dialog id="live-dialog"><form method="dialog" class="dialog-card"><div class="danger-icon">!</div><p class="eyebrow">CANLI MOD ONAYI</p><h2>Gerçek para ile işlem başlayacak</h2><p>Canlı mod yalnızca API testleri, 72 saatlik gözlem, paper kayıtları ve risk kontrolleri tamamlandığında açılır. Devam etmek için ifadeyi yazın.</p><label>Onay ifadesi<input id="live-confirm" autocomplete="off" placeholder="CANLI İŞLEMİ AÇ"></label><div class="dialog-actions"><button value="cancel" class="secondary">Vazgeç</button><button value="confirm" id="confirm-live" class="danger" disabled>Canlı modu aç</button></div></form></dialog>
+  <dialog id="auth-dialog"><form id="auth-form" class="dialog-card"><p class="eyebrow">YEREL HESAP</p><h2 id="auth-title">İlk kullanıcıyı oluştur</h2><p>En az 12 karakterli bir parola kullanın. Bu hesap ve kasası yalnızca Umbrel cihazınızda tutulur.</p><label>Kullanıcı adı<input id="auth-username" required minlength="3" autocomplete="username"></label><label>Parola<input id="auth-password" type="password" required minlength="12" autocomplete="new-password"></label><p class="form-error" id="auth-error" role="alert"></p><button class="primary-btn full" type="submit">Devam et</button></form></dialog>
+  <dialog id="user-dialog"><form id="user-form" class="dialog-card"><p class="eyebrow">AYRI PROFİL</p><h2>Yeni kullanıcı ekle</h2><p>Yeni kullanıcının anahtarları, ayarları ve işlem kayıtları ayrı tutulur.</p><label>Kullanıcı adı<input id="new-username" required minlength="3" autocomplete="off"></label><label>Geçici parola<input id="new-password" type="password" required minlength="12" autocomplete="new-password"></label><p class="form-error" id="user-error" role="alert"></p><div class="dialog-actions"><button class="secondary" type="button" id="user-cancel">Vazgeç</button><button class="primary-btn" type="submit">Kullanıcıyı oluştur</button></div></form></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/app.js" defer></script>
 </body>
 </html>

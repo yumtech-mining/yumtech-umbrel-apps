@@ -4,7 +4,7 @@ import pytest
 
 from app.db import Database
 from app.domain import ExecutionState, Opportunity
-from app.coordinator import PaperCoordinator
+from app.coordinator import PaperCoordinator, apply_quote_budgets
 from app.execution import ArbitrageExecutionEngine, PaperAdapter, RecoveryLimitExceeded
 from app.security import passwords
 
@@ -16,6 +16,16 @@ def opportunity() -> Opportunity:
         gross_profit_try=Decimal("100"), fees_try=Decimal("30.15"), safety_buffer_try=Decimal("10"),
         net_profit_try=Decimal("59.85"), net_profit_pct=Decimal("0.005985"), executable=True,
     )
+
+
+def test_quote_budgets_cap_both_legs_and_preserve_net_rate():
+    capped = apply_quote_budgets(opportunity(), {
+        "btcturk_budget_try": "1000", "binance_tr_budget_try": "1000"})
+    assert capped is not None
+    assert capped.base_amount * capped.buy_vwap <= Decimal("1000")
+    assert capped.base_amount * capped.sell_vwap <= Decimal("1000")
+    assert capped.net_profit_try < opportunity().net_profit_try
+    assert capped.net_profit_pct == opportunity().net_profit_pct
 
 
 def database(tmp_path) -> Database:

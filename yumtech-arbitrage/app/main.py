@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .coordinator import PaperCoordinator
+from .coordinator import PaperCoordinator, apply_quote_budgets
 from .db import Database
 from .domain import LiveQualification
 from .execution import (ArbitrageExecutionEngine, PaperAdapter,
@@ -60,7 +60,7 @@ async def lifespan(_: FastAPI):
         pass
 
 
-app = FastAPI(title="YUMTECH Arbitrage", version="0.3.1-dev", lifespan=lifespan,
+app = FastAPI(title="YUMTECH Arbitrage", version="0.3.2-dev", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 
@@ -86,6 +86,20 @@ class TestSettingsUpdate(BaseModel):
     max_trade_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
     daily_loss_limit_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
     max_recovery_loss_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+
+
+class BotSettingsUpdate(BaseModel):
+    """User-facing quote budgets for the two TRY spot legs.
+
+    Hummingbot strategies express order size in base asset. The dashboard
+    accepts TRY and the scanner/runtime converts it against the current VWAP
+    before a test intent is created. Live mode is intentionally not a valid
+    value in this endpoint.
+    """
+
+    active: bool
+    btcturk_budget_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+    binance_tr_budget_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
 
 
 class HummingbotControlRequest(BaseModel):
@@ -394,6 +408,26 @@ def update_test_settings(payload: TestSettingsUpdate, user: dict = Depends(requi
     return {"mode": "test", **payload.model_dump()}
 
 
+@app.put("/api/settings/bot")
+def update_bot_settings(payload: BotSettingsUpdate, user: dict = Depends(require_csrf)):
+    budgets = [Decimal(payload.btcturk_budget_try), Decimal(payload.binance_tr_budget_try)]
+    if any(value < Decimal("1") for value in budgets):
+        raise HTTPException(422, "Borsa işlem bütçesi en az 1 TRY olmalı")
+    if any(value > Decimal("100000000") for value in budgets):
+        raise HTTPException(422, "Borsa işlem bütçesi 100.000.000 TRY sınırını aşamaz")
+    with db.connect() as conn:
+        if payload.active:
+            # Pi 5 resource and account safety: only one active profile may trade.
+            conn.execute("UPDATE user_settings SET active=0 WHERE user_id<>?", (user["id"],))
+        conn.execute(
+            "UPDATE user_settings SET mode='test',active=?,btcturk_budget_try=?,"
+            "binance_tr_budget_try=? WHERE user_id=?",
+            (int(payload.active), payload.btcturk_budget_try, payload.binance_tr_budget_try, user["id"]),
+        )
+    db.audit(user["id"], "bot_settings_updated", json.dumps(payload.model_dump()))
+    return {"mode": "test", **payload.model_dump()}
+
+
 @app.post("/api/paper/execute", status_code=201)
 async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(require_csrf)):
     match = next((item for item in scanner.opportunities
@@ -404,10 +438,15 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
     if not match.get("executable"):
         raise HTTPException(409, "Fırsat işlem koşullarını karşılamıyor")
     with db.connect() as conn:
-        risk = conn.execute("SELECT max_recovery_loss_try FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+        risk = conn.execute("SELECT max_recovery_loss_try,btcturk_budget_try,binance_tr_budget_try "
+                            "FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
+    profile = dict(risk or {})
+    budgeted = apply_quote_budgets(opportunity_from_mapping(match), profile)
+    if budgeted is None:
+        raise HTTPException(409, "Borsa işlem bütçesi güncel fırsat için yeterli değil")
     try:
         result = await execution_engine.execute_paper(
-            user["id"], opportunity_from_mapping(match), Decimal(risk["max_recovery_loss_try"]))
+            user["id"], budgeted, Decimal(profile["max_recovery_loss_try"]))
     except RecoveryLimitExceeded:
         raise HTTPException(409, "Kurtarma zarar limiti aşıldı; motor güvenli durumda durduruldu")
     db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id, "state": result.state.value}))
@@ -415,7 +454,8 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
         db.record_paper_trade(user["id"])
     return {"intent_id": result.intent_id, "state": result.state.value,
             "realized_profit_try": str(result.realized_profit_try), "exposure_base": str(result.exposure_base),
-            "recovered": result.recovery_fill is not None}
+            "recovered": result.recovery_fill is not None,
+            "requested_quote_try": str(budgeted.base_amount * budgeted.buy_vwap)}
 
 
 @app.get("/api/executions")

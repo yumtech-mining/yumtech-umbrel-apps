@@ -1,10 +1,62 @@
 import asyncio
 import json
 import time
+from dataclasses import replace
 from decimal import Decimal
+from decimal import ROUND_DOWN
 
 from .db import Database
+from .domain import Opportunity
 from .execution import ArbitrageExecutionEngine, RecoveryLimitExceeded, opportunity_from_mapping
+
+
+def _quote_budget(profile: dict, exchange: str) -> Decimal:
+    """Return the per-exchange TRY cap stored for a user profile.
+
+    The dashboard stores quote currency (TRY) because that is how a person
+    naturally budgets a trade. Hummingbot connectors ultimately receive base
+    asset size; ``apply_quote_budgets`` performs the deterministic conversion
+    against the scanner VWAP before a paper intent is written.
+    """
+
+    field = "btcturk_budget_try" if exchange == "BTCTürk" else "binance_tr_budget_try"
+    try:
+        value = Decimal(str(profile.get(field, "0")))
+    except (ArithmeticError, TypeError, ValueError):
+        return Decimal("0")
+    return max(value, Decimal("0"))
+
+
+def apply_quote_budgets(opportunity: Opportunity, profile: dict) -> Opportunity | None:
+    """Cap both legs to a user's TRY budgets and recompute paper economics.
+
+    A cap never increases an order. If a budget is lower than the scanner's
+    target, the base amount is rounded down to eight decimal places (the
+    paper precision used by the control plane). Returning ``None`` means the
+    cap cannot produce a positive base amount and the opportunity is skipped.
+    """
+
+    if opportunity.base_amount <= 0 or opportunity.buy_vwap <= 0 or opportunity.sell_vwap <= 0:
+        return None
+    buy_budget = _quote_budget(profile, opportunity.buy_exchange)
+    sell_budget = _quote_budget(profile, opportunity.sell_exchange)
+    if buy_budget <= 0 or sell_budget <= 0:
+        return None
+    max_base = min(opportunity.base_amount,
+                   buy_budget / opportunity.buy_vwap,
+                   sell_budget / opportunity.sell_vwap)
+    amount = max_base.quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    if amount <= 0:
+        return None
+    if amount == opportunity.base_amount:
+        return opportunity
+    scale = amount / opportunity.base_amount
+    gross = opportunity.gross_profit_try * scale
+    fees = opportunity.fees_try * scale
+    buffer = opportunity.safety_buffer_try * scale
+    net = gross - fees - buffer
+    return replace(opportunity, base_amount=amount, gross_profit_try=gross,
+                   fees_try=fees, safety_buffer_try=buffer, net_profit_try=net)
 
 
 class PaperCoordinator:
@@ -58,16 +110,21 @@ class PaperCoordinator:
             if daily_loss >= Decimal(profile["daily_loss_limit_try"]):
                 self.db.audit(profile["user_id"], "paper_daily_loss_gate", json.dumps({"loss": str(daily_loss)}))
                 continue
-            selected = next((item for item in candidates
-                             if Decimal(item["base_amount"]) * Decimal(item["buy_vwap"])
-                             <= Decimal(profile["max_trade_try"])
-                             and not self.db.has_recent_execution(
-                                 profile["user_id"], item["pair"], now_ms - self.cooldown_seconds * 1000)), None)
-            if selected is None:
+            selected = None
+            budgeted = None
+            for item in candidates:
+                if self.db.has_recent_execution(profile["user_id"], item["pair"],
+                                                now_ms - self.cooldown_seconds * 1000):
+                    continue
+                candidate = apply_quote_budgets(opportunity_from_mapping(item), profile)
+                if candidate is not None and candidate.base_amount * candidate.buy_vwap <= Decimal(profile["max_trade_try"]):
+                    selected, budgeted = item, candidate
+                    break
+            if selected is None or budgeted is None:
                 continue
             try:
                 result = await self.engine.execute_paper(
-                    profile["user_id"], opportunity_from_mapping(selected),
+                    profile["user_id"], budgeted,
                     Decimal(profile["max_recovery_loss_try"]))
                 self.last_execution_id = result.intent_id
                 if result.state.value == "BALANCED_FILL":

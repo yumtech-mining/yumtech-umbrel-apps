@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
  mode TEXT NOT NULL DEFAULT 'test' CHECK(mode IN ('test','live')),
  max_trade_try TEXT NOT NULL DEFAULT '1000', daily_loss_limit_try TEXT NOT NULL DEFAULT '250',
  max_recovery_loss_try TEXT NOT NULL DEFAULT '100', active INTEGER NOT NULL DEFAULT 0,
+ btcturk_budget_try TEXT NOT NULL DEFAULT '1000', binance_tr_budget_try TEXT NOT NULL DEFAULT '1000',
  observation_started_at INTEGER, observation_last_success_at INTEGER,
  paper_opportunities INTEGER NOT NULL DEFAULT 0, paper_trades INTEGER NOT NULL DEFAULT 0,
  failure_drills_ok INTEGER NOT NULL DEFAULT 0,
@@ -78,6 +79,8 @@ class Database:
             # field explicitly while retaining all prior user data.
             settings_columns = {row[1] for row in db.execute("PRAGMA table_info(user_settings)")}
             migrations = {
+                "btcturk_budget_try": "ALTER TABLE user_settings ADD COLUMN btcturk_budget_try TEXT NOT NULL DEFAULT '1000'",
+                "binance_tr_budget_try": "ALTER TABLE user_settings ADD COLUMN binance_tr_budget_try TEXT NOT NULL DEFAULT '1000'",
                 "observation_started_at": "ALTER TABLE user_settings ADD COLUMN observation_started_at INTEGER",
                 "observation_last_success_at": "ALTER TABLE user_settings ADD COLUMN observation_last_success_at INTEGER",
                 "paper_opportunities": "ALTER TABLE user_settings ADD COLUMN paper_opportunities INTEGER NOT NULL DEFAULT 0",
@@ -192,7 +195,8 @@ class Database:
     def active_paper_profiles(self) -> list[dict]:
         with self.connect() as db:
             return [dict(row) for row in db.execute(
-                "SELECT user_id,max_trade_try,daily_loss_limit_try,max_recovery_loss_try "
+                "SELECT user_id,max_trade_try,daily_loss_limit_try,max_recovery_loss_try,"
+                "btcturk_budget_try,binance_tr_budget_try "
                 "FROM user_settings WHERE mode='test' AND active=1 ORDER BY user_id"
             )]
 

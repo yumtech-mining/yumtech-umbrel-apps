@@ -27,6 +27,11 @@ def test_owner_session_csrf_and_separate_user(tmp_path):
             "active": True, "max_trade_try": "1000", "daily_loss_limit_try": "250",
             "max_recovery_loss_try": "100"})
         assert test_settings.status_code == 200 and test_settings.json()["active"] is True
+        bot_settings = client.put("/api/settings/bot", headers={"X-CSRF-Token": csrf}, json={
+            "active": True, "btcturk_budget_try": "750", "binance_tr_budget_try": "900"})
+        assert bot_settings.status_code == 200
+        assert bot_settings.json()["btcturk_budget_try"] == "750"
+        assert client.get("/api/me").json()["settings"]["binance_tr_budget_try"] == "900"
         hb_control = client.post("/api/hummingbot/control", headers={"X-CSRF-Token": csrf},
                                  json={"action": "start_test"})
         assert hb_control.status_code == 200

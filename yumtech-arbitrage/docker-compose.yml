@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   hummingbot:
-    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.3.1
+    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.3.2
     restart: on-failure
     init: true
     environment:
@@ -35,7 +35,7 @@ services:
       APP_PORT: 8098
 
   dashboard:
-    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.3.1
+    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.3.2
     depends_on:
       hummingbot:
         condition: service_healthy
