@@ -36,7 +36,7 @@ class MarketScanner:
     async def run(self) -> None:
         self.running = True
         timeout = httpx.Timeout(8, connect=5)
-        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.3.0"}, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.3.1"}, trust_env=False) as client:
             bt, bn = BTCTurkPublic(client), BinanceTRPublic(client)
             while self.running:
                 try:

@@ -1,7 +1,8 @@
 # YUMTECH Arbitrage v0.3 — Hummingbot Tabanlı Tasarım
 
 Durum: ARM64 motor hostu ve bağlayıcılar paketlendi. Motor hazır/boşta host
-olarak çalışır; canlı işlem kapalıdır.
+olarak çalışır; canlı işlem kapalıdır. Dashboard ile runtime arasındaki yerel
+test kontrol köprüsü ve kalıcı yeterlilik sayaçları v0.3'e eklenmiştir.
 
 ## 1. Temel karar
 
@@ -191,8 +192,9 @@ Servisler yalnızca yerel ağda yayınlanır:
 - kalıcı birim: Hummingbot yapılandırmaları, loglar ve SQLite verileri.
 
 Dashboard portu `8098` olarak korunur. Hummingbot kontrol arabirimi internete
-açılmaz. Dashboard, servisle paylaşılan sırrı olmayan durum işaretinden yalnızca
-motor sürümünü, modunu ve hazır/kapalı bilgisini okur. Tailscale erişimi
+açılmaz. Dashboard, Docker soketi kullanmadan paylaşılan veri birimindeki
+allow-list komut dosyasına test komutu yazar; runtime yalnızca imzasız sır
+içermeyen durum işareti üretir. Tailscale erişimi
 kullanılacaksa yalnızca dashboard'a izin verilir.
 
 ## 10. Kabul kapıları
@@ -200,11 +202,22 @@ kullanılacaksa yalnızca dashboard'a izin verilir.
 Canlı işleme geçmeden önce aşağıdakiler tamamlanmalıdır:
 
 1. Her bağlayıcının birim testleri ve kaydedilmiş API yanıt testleri.
-2. En az 72 saat public WebSocket/REST kesintisiz gözlem.
+2. En az 72 saat public WebSocket/REST kesintisiz gözlem (SQLite'da aralık
+   oluşursa sayaç sıfırlanır).
 3. Salt-okunur anahtarlarla bakiye ve saat eşitleme testi.
 4. Paper modda kısmi gerçekleşme, bağlantı kesintisi ve eski order-book testi.
 5. Minimum tutarla kontrollü iki yönlü gerçek emir testi.
 6. Tek-bacak kurtarma ve günlük zarar kilidi testi.
 7. Ağ trafiğinde Hummingbot raporlama isteği bulunmadığının doğrulanması.
+
+### v0.3 kontrol komutları
+
+Dashboard'ın **Test motorunu hazırla**, **Durdur** ve **Acil durdur** düğmeleri
+yalnızca `/data/hummingbot-control.json` dosyasına atomik, kısa ömürlü bir
+komut yazar. Runtime `control_supervisor.py` dosyayı okur ve durum işaretini
+günceller. Komut şemasında canlı başlatma olmadığı için UI, ortam değişkeni ya
+da HTTP isteği canlı işlem açamaz. Gerçek Hummingbot controller'ı ancak bu
+köprü, connector fixture'ları ve tek-bacak kurtarma testleri tamamlandıktan
+sonra ayrı bir sürümde etkinleştirilebilir.
 
 Bu kapılardan biri geçmezse canlı mod açılamaz.

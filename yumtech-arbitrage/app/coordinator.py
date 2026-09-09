@@ -20,6 +20,7 @@ class PaperCoordinator:
         self.last_snapshot_id = 0
         self.last_error: str | None = None
         self.last_execution_id: str | None = None
+        self.enabled = True
 
     async def run(self):
         self.running = True
@@ -27,7 +28,10 @@ class PaperCoordinator:
             try:
                 if self.scanner.snapshot_id > self.last_snapshot_id:
                     self.last_snapshot_id = self.scanner.snapshot_id
-                    await self.process_snapshot()
+                    if self.scanner.last_success_ms:
+                        self.db.record_observation(self.scanner.last_success_ms)
+                    if self.enabled:
+                        await self.process_snapshot()
                     self.last_error = None
             except asyncio.CancelledError:
                 raise
@@ -38,6 +42,10 @@ class PaperCoordinator:
     def stop(self):
         self.running = False
 
+    def set_enabled(self, enabled: bool) -> None:
+        """Pause/resume automatic paper executions without killing the task."""
+        self.enabled = bool(enabled)
+
     async def process_snapshot(self):
         candidates = [item for item in self.scanner.opportunities if item.get("executable")]
         if not candidates:
@@ -45,6 +53,7 @@ class PaperCoordinator:
         now_ms = int(time.time() * 1000)
         day_start_ms = now_ms - (now_ms % 86_400_000)
         for profile in self.db.active_paper_profiles():
+            self.db.record_paper_opportunities(profile["user_id"], len(candidates))
             daily_loss = Decimal(self.db.realized_loss_since(profile["user_id"], day_start_ms))
             if daily_loss >= Decimal(profile["daily_loss_limit_try"]):
                 self.db.audit(profile["user_id"], "paper_daily_loss_gate", json.dumps({"loss": str(daily_loss)}))
@@ -61,6 +70,8 @@ class PaperCoordinator:
                     profile["user_id"], opportunity_from_mapping(selected),
                     Decimal(profile["max_recovery_loss_try"]))
                 self.last_execution_id = result.intent_id
+                if result.state.value == "BALANCED_FILL":
+                    self.db.record_paper_trade(profile["user_id"])
                 self.db.audit(profile["user_id"], "auto_paper_execution",
                               json.dumps({"intent_id": result.intent_id, "pair": selected["pair"]}))
             except RecoveryLimitExceeded:

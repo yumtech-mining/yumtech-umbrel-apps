@@ -26,7 +26,11 @@ CREATE TABLE IF NOT EXISTS user_settings (
  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
  mode TEXT NOT NULL DEFAULT 'test' CHECK(mode IN ('test','live')),
  max_trade_try TEXT NOT NULL DEFAULT '1000', daily_loss_limit_try TEXT NOT NULL DEFAULT '250',
- max_recovery_loss_try TEXT NOT NULL DEFAULT '100', active INTEGER NOT NULL DEFAULT 0
+ max_recovery_loss_try TEXT NOT NULL DEFAULT '100', active INTEGER NOT NULL DEFAULT 0,
+ observation_started_at INTEGER, observation_last_success_at INTEGER,
+ paper_opportunities INTEGER NOT NULL DEFAULT 0, paper_trades INTEGER NOT NULL DEFAULT 0,
+ failure_drills_ok INTEGER NOT NULL DEFAULT 0,
+ btcturk_market_buy_conversion_safe INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS audit_log (
  id INTEGER PRIMARY KEY, user_id INTEGER, event TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}',
@@ -69,6 +73,21 @@ class Database:
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             if "is_admin" not in columns:
                 db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+            # Existing Umbrel installations predate qualification counters.
+            # SQLite has no IF NOT EXISTS form for columns, so migrate each
+            # field explicitly while retaining all prior user data.
+            settings_columns = {row[1] for row in db.execute("PRAGMA table_info(user_settings)")}
+            migrations = {
+                "observation_started_at": "ALTER TABLE user_settings ADD COLUMN observation_started_at INTEGER",
+                "observation_last_success_at": "ALTER TABLE user_settings ADD COLUMN observation_last_success_at INTEGER",
+                "paper_opportunities": "ALTER TABLE user_settings ADD COLUMN paper_opportunities INTEGER NOT NULL DEFAULT 0",
+                "paper_trades": "ALTER TABLE user_settings ADD COLUMN paper_trades INTEGER NOT NULL DEFAULT 0",
+                "failure_drills_ok": "ALTER TABLE user_settings ADD COLUMN failure_drills_ok INTEGER NOT NULL DEFAULT 0",
+                "btcturk_market_buy_conversion_safe": "ALTER TABLE user_settings ADD COLUMN btcturk_market_buy_conversion_safe INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, statement in migrations.items():
+                if column not in settings_columns:
+                    db.execute(statement)
 
     @contextmanager
     def connect(self):
@@ -191,3 +210,108 @@ class Database:
                 "AND realized_profit_try IS NOT NULL", (user_id, since_ms))]
         loss = sum((-Decimal(value) for value in values if Decimal(value) < 0), Decimal("0"))
         return str(loss)
+
+    def record_observation(self, timestamp_ms: int, max_gap_ms: int = 15 * 60 * 1000) -> int:
+        """Advance continuous public observation for every local profile.
+
+        A long outage resets the observation and paper counters. This prevents
+        a restarted or stale scanner from satisfying the 72-hour gate with
+        disconnected historical samples.
+        """
+
+        timestamp_ms = int(timestamp_ms)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT user_id,observation_started_at,observation_last_success_at FROM user_settings"
+            ).fetchall()
+            reset = 0
+            for row in rows:
+                last = row["observation_last_success_at"]
+                interrupted = last is None or timestamp_ms - int(last) > max_gap_ms
+                if row["observation_started_at"] is None or interrupted:
+                    db.execute(
+                        "UPDATE user_settings SET observation_started_at=?,observation_last_success_at=?,"
+                        "paper_opportunities=0,paper_trades=0 WHERE user_id=?",
+                        (timestamp_ms, timestamp_ms, row["user_id"]),
+                    )
+                    reset += 1
+                else:
+                    db.execute("UPDATE user_settings SET observation_last_success_at=? WHERE user_id=?",
+                               (timestamp_ms, row["user_id"]))
+            return reset
+
+    def record_paper_opportunities(self, user_id: int, count: int = 1) -> None:
+        count = max(int(count), 0)
+        if count == 0:
+            return
+        with self.connect() as db:
+            db.execute("UPDATE user_settings SET paper_opportunities=paper_opportunities+? WHERE user_id=?",
+                       (count, user_id))
+
+    def record_paper_trade(self, user_id: int) -> None:
+        with self.connect() as db:
+            db.execute("UPDATE user_settings SET paper_trades=paper_trades+1 WHERE user_id=?", (user_id,))
+
+    def qualification_metrics(self, user_id: int, now_ms: int | None = None) -> dict:
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        with self.connect() as db:
+            row = db.execute("SELECT observation_started_at,observation_last_success_at,"
+                             "paper_opportunities,paper_trades,failure_drills_ok,"
+                             "btcturk_market_buy_conversion_safe FROM user_settings WHERE user_id=?",
+                             (user_id,)).fetchone()
+        if not row:
+            return {"observation_hours": "0", "paper_opportunities": 0, "paper_trades": 0,
+                    "failure_drills_ok": False, "btcturk_market_buy_conversion_safe": False,
+                    "observation_started_at": None, "observation_last_success_at": None}
+        start = row["observation_started_at"]
+        last = row["observation_last_success_at"]
+        hours = Decimal("0")
+        if start is not None and last is not None and int(last) <= now_ms:
+            # Count through the last successful snapshot, not wall-clock time
+            # after the scanner went offline.
+            hours = (Decimal(int(last) - int(start)) / Decimal(3_600_000)).quantize(Decimal("0.01"))
+        return {
+            "observation_hours": str(max(hours, Decimal("0"))),
+            "paper_opportunities": int(row["paper_opportunities"] or 0),
+            "paper_trades": int(row["paper_trades"] or 0),
+            "failure_drills_ok": bool(row["failure_drills_ok"]),
+            "btcturk_market_buy_conversion_safe": bool(row["btcturk_market_buy_conversion_safe"]),
+            "observation_started_at": start,
+            "observation_last_success_at": last,
+        }
+
+    def execution_summary(self, user_id: int) -> dict:
+        """Return dashboard-safe aggregate execution metrics for one profile."""
+
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS total,"
+                "SUM(CASE WHEN state='BALANCED_FILL' THEN 1 ELSE 0 END) AS balanced,"
+                "SUM(CASE WHEN state IN ('PARTIAL_IMBALANCE','RECOVERY','FAILED_SAFE','HALTED') THEN 1 ELSE 0 END) AS recovery_events,"
+                "SUM(CASE WHEN realized_profit_try IS NOT NULL AND CAST(realized_profit_try AS REAL)>0 THEN 1 ELSE 0 END) AS profitable,"
+                "COALESCE(SUM(CAST(COALESCE(realized_profit_try,'0') AS REAL)),0) AS realized_profit_try,"
+                "COALESCE(SUM(CASE WHEN CAST(COALESCE(realized_profit_try,'0') AS REAL)<0 THEN CAST(realized_profit_try AS REAL) ELSE 0 END),0) AS realized_loss_try "
+                "FROM execution_intents WHERE user_id=?", (user_id,)
+            ).fetchone()
+            now_ms = int(time.time() * 1000)
+            day_start = now_ms - (now_ms % 86_400_000)
+            week_start = day_start - 6 * 86_400_000
+            month_start = day_start - 29 * 86_400_000
+            windows = {}
+            for name, start in (("today", day_start), ("seven_days", week_start), ("thirty_days", month_start)):
+                value = db.execute(
+                    "SELECT COALESCE(SUM(CAST(COALESCE(realized_profit_try,'0') AS REAL)),0) "
+                    "FROM execution_intents WHERE user_id=? AND created_at>=?", (user_id, start)
+                ).fetchone()[0]
+                windows[f"{name}_realized_profit_try"] = str(
+                    Decimal(str(value or 0)).quantize(Decimal("0.01"))
+                )
+        return {
+            "total": int(row["total"] or 0),
+            "balanced": int(row["balanced"] or 0),
+            "recovery_events": int(row["recovery_events"] or 0),
+            "profitable": int(row["profitable"] or 0),
+            "realized_profit_try": str(Decimal(str(row["realized_profit_try"] or 0)).quantize(Decimal("0.01"))),
+            "realized_loss_try": str(Decimal(str(row["realized_loss_try"] or 0)).quantize(Decimal("0.01"))),
+            **windows,
+        }

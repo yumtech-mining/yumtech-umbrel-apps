@@ -101,7 +101,8 @@ class BtcTurkExchange(ExchangePyBase):
 
     def supported_order_types(self):
         # Market buy uses quote quantity at BTCTurk and is deliberately kept out
-        # of generic Hummingbot order submission. Recovery handles it explicitly.
+        # of generic Hummingbot order submission. The explicit recovery method
+        # below requires a fresh quote balance and runs the side-aware preflight.
         return [OrderType.LIMIT]
 
     def _create_web_assistants_factory(self):
@@ -127,12 +128,113 @@ class BtcTurkExchange(ExchangePyBase):
         if order_type is not OrderType.LIMIT:
             raise ValueError("BTCTurk generic connector accepts LIMIT orders only")
         symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
-        payload = utils.build_limit_order_payload(
+        payload = utils.build_side_aware_order_payload(
             client_order_id=order_id_value,
             symbol=symbol,
             side="buy" if trade_type is TradeType.BUY else "sell",
-            quantity=amount,
+            order_method="limit",
+            base_amount=amount,
             price=price,
+        )
+        response = unwrap_response(await self._api_post(
+            path_url=CONSTANTS.ORDER_PATH_URL,
+            data=payload,
+            is_auth_required=True,
+            limit_id=CONSTANTS.ORDER_PATH_URL,
+        ))
+        return order_id(response), order_timestamp(response, self.current_timestamp)
+
+    def market_buy_preflight(
+        self,
+        *,
+        trading_pair: str,
+        base_amount: Decimal,
+        reference_price: Decimal,
+        available_quote_try: Decimal,
+        fee_rate: Optional[Decimal] = None,
+        safety_buffer_rate: Decimal = Decimal("0.0010"),
+        min_quote_try: Optional[Decimal] = None,
+        quote_step: Optional[Decimal] = None,
+        max_quote_try: Optional[Decimal] = None,
+    ) -> utils.MarketBuyQuote:
+        """Validate and size a BTCTurk market BUY before any HTTP request.
+
+        Hummingbot's strategy amount is a base-asset amount. BTCTurk expects
+        TRY in ``quantity`` for a market BUY, so callers must provide a fresh
+        authenticated TRY balance and a fresh ask/VWAP reference price. Missing
+        balance or trading-rule precision is rejected rather than guessed.
+        """
+
+        rule = getattr(self, "_trading_rules", {}).get(trading_pair)
+        if rule is None and (min_quote_try is None or quote_step is None):
+            raise ValueError("BTCTurk trading rule is required for market BUY preflight")
+        fee_rate = utils.DEFAULT_FEES.taker_percent_fee_decimal if fee_rate is None else fee_rate
+        if min_quote_try is None:
+            min_quote_try = getattr(rule, "min_notional_size", Decimal("0"))
+        if quote_step is None:
+            quote_step = getattr(rule, "min_quote_amount_increment", None)
+            if quote_step is None:
+                quote_step = getattr(rule, "min_price_increment", Decimal("0.01"))
+        return utils.market_buy_quote_for_base(
+            base_amount=base_amount,
+            reference_price=reference_price,
+            fee_rate=fee_rate,
+            safety_buffer_rate=safety_buffer_rate,
+            available_try=available_quote_try,
+            min_quote_try=min_quote_try,
+            quote_step=quote_step,
+            max_quote_try=max_quote_try,
+        )
+
+    async def place_market_recovery_order(
+        self,
+        *,
+        order_id_value: str,
+        trading_pair: str,
+        amount: Decimal,
+        trade_type: TradeType,
+        reference_price: Optional[Decimal] = None,
+        available_quote_try: Optional[Decimal] = None,
+        fee_rate: Optional[Decimal] = None,
+        safety_buffer_rate: Decimal = Decimal("0.0010"),
+        min_quote_try: Optional[Decimal] = None,
+        quote_step: Optional[Decimal] = None,
+        max_quote_try: Optional[Decimal] = None,
+    ) -> Tuple[str, float]:
+        """Submit one explicitly preflighted market recovery order.
+
+        This method is intentionally separate from Hummingbot's generic order
+        path. Market BUY requires both ``reference_price`` and an explicit
+        ``available_quote_try``; therefore a stale cache, a missing balance or
+        a base/quote mix-up fails before ``_api_post`` is reached. Market SELL
+        keeps ``amount`` in base units and does not use the BUY converter.
+        """
+
+        if trade_type is TradeType.BUY:
+            if reference_price is None or available_quote_try is None:
+                raise ValueError("market BUY recovery requires reference price and TRY balance")
+            market_buy_quote = self.market_buy_preflight(
+                trading_pair=trading_pair,
+                base_amount=amount,
+                reference_price=reference_price,
+                available_quote_try=available_quote_try,
+                fee_rate=fee_rate,
+                safety_buffer_rate=safety_buffer_rate,
+                min_quote_try=min_quote_try,
+                quote_step=quote_step,
+                max_quote_try=max_quote_try,
+            )
+        else:
+            market_buy_quote = None
+            # A market SELL still needs a positive base amount. The payload
+            # builder performs the same validation and preserves base units.
+        symbol = await self.exchange_symbol_associated_to_pair(trading_pair)
+        payload = utils.build_market_order_payload(
+            client_order_id=order_id_value,
+            symbol=symbol,
+            side="buy" if trade_type is TradeType.BUY else "sell",
+            base_amount=amount,
+            market_buy_quote=market_buy_quote,
         )
         response = unwrap_response(await self._api_post(
             path_url=CONSTANTS.ORDER_PATH_URL,

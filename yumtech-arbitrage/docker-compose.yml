@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   hummingbot:
-    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.3.0
+    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.3.1
     restart: on-failure
     init: true
     environment:
@@ -10,12 +10,13 @@ services:
       YUMTECH_TELEMETRY_DISABLED: "true"
       YUMTECH_LIVE_TRADING_ENABLED: "false"
       YUMTECH_STATUS_FILE: /home/hummingbot/yumtech-data/hummingbot-status.json
+      YUMTECH_CONTROL_FILE: /home/hummingbot/yumtech-data/hummingbot-control.json
     volumes:
       - ${APP_DATA_DIR}/hummingbot/conf:/home/hummingbot/conf
       - ${APP_DATA_DIR}/hummingbot/logs:/home/hummingbot/logs
       - ${APP_DATA_DIR}/hummingbot/data:/home/hummingbot/data
       - ${APP_DATA_DIR}/data:/home/hummingbot/yumtech-data
-    command: ["tail", "-f", "/dev/null"]
+    command: ["python", "-u", "/opt/yumtech-control-supervisor.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -s /home/hummingbot/yumtech-data/hummingbot-status.json"]
       interval: 30s
@@ -28,7 +29,7 @@ services:
       APP_PORT: 8098
 
   dashboard:
-    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.3.0
+    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.3.1
     depends_on:
       hummingbot:
         condition: service_healthy

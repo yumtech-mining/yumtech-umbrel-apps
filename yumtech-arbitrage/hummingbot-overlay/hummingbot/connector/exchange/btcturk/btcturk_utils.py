@@ -7,6 +7,16 @@ from pydantic import ConfigDict, Field, SecretStr
 from hummingbot.client.config.config_data_types import BaseConnectorConfigMap
 from hummingbot.core.data_type.trade_fee import TradeFeeSchema
 
+from .btcturk_order_semantics import (
+    InsufficientQuoteBalance,
+    MarketBuyQuote,
+    OrderSemanticsError,
+    build_market_order_payload,
+    build_side_aware_order_payload,
+    market_buy_quote_for_base,
+    quantize_up,
+)
+
 
 CENTRALIZED = True
 EXAMPLE_PAIR = "BTC-TRY"
@@ -54,6 +64,9 @@ class BtcTurkTradingRule:
     min_base_amount_increment: Decimal
     min_notional_size: Decimal
     supports_market_order: bool
+    # BTCTurk's denominator scale is also the precision used by a TRY-sized
+    # market BUY quantity. Keep this separate from base amount precision.
+    min_quote_amount_increment: Decimal = Decimal("0.01")
 
 
 def _increment(scale: Any) -> Decimal:
@@ -91,6 +104,7 @@ def parse_trading_rule(info: Dict[str, Any]) -> BtcTurkTradingRule:
         min_base_amount_increment=amount_increment,
         min_notional_size=min_notional,
         supports_market_order=bool(info.get("hasMarketOrder", False)),
+        min_quote_amount_increment=_increment(info["denominatorScale"]),
     )
 
 
@@ -114,4 +128,3 @@ def build_limit_order_payload(
         "orderType": normalized_side,
         "pairSymbol": symbol.upper(),
     }
-

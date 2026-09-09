@@ -132,3 +132,19 @@ def test_live_safety_gate_documents_btcturk_quote_sized_market_buy():
     domain = (ROOT / "app" / "domain.py").read_text()
     assert "TRY (quote)" in gate
     assert "btcturk_market_buy_conversion_safe" in domain
+
+
+def test_btcturk_side_aware_market_buy_preflight_is_wired():
+    connector_root = ROOT / "hummingbot-overlay" / "hummingbot" / "connector" / "exchange" / "btcturk"
+    semantics = (connector_root / "btcturk_order_semantics.py").read_text()
+    exchange = (connector_root / "btcturk_exchange.py").read_text()
+    assert "market_buy_quote_for_base" in semantics
+    assert "ROUND_UP" in semantics
+    assert "market BUY requires a validated TRY quote" in semantics
+    assert '"orderMethod": "market"' in semantics
+    assert "market_buy_preflight" in exchange
+    assert "available_quote_try" in exchange
+    assert "place_market_recovery_order" in exchange
+    # Generic Hummingbot order submission remains LIMIT-only; only the
+    # explicit, balance-gated recovery method may emit a market order.
+    assert 'return [OrderType.LIMIT]' in exchange

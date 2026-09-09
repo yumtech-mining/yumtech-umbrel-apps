@@ -20,7 +20,7 @@ done
 write_status() {
   local state="$1"
   local temporary_file="${status_file}.tmp"
-  printf '{"state":"%s","mode":"test","engine_version":"%s","telemetry_disabled":true,"live_orders_enabled":false,"updated_at_ms":%s}\n' \
+  printf '{"state":"%s","mode":"test","engine_version":"%s","telemetry_disabled":true,"live_orders_enabled":false,"strategy":"idle","control_action":null,"orders_submitted":0,"engine_process_running":false,"reason":"Test host başlatılıyor","updated_at_ms":%s}\n' \
     "$state" "${YUMTECH_ENGINE_VERSION}" "$(date +%s%3N)" >"$temporary_file"
   mv -f -- "$temporary_file" "$status_file"
 }

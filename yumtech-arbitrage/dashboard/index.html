@@ -59,7 +59,7 @@
           <span>Uygun fırsat</span><strong id="ready-count">—</strong><small><span id="pair-count">—</span> ortak TRY paritesinde</small>
         </article>
         <article class="metric-card">
-          <span>Kullanılabilir TRY</span><strong>—</strong><small>API doğrulamasından sonra</small>
+          <span>Kullanılabilir TRY</span><strong id="available-try">—</strong><small>İki doğrulanmış hesabın toplamı</small>
         </article>
         <article class="metric-card">
           <span>Tarayıcı sağlığı</span><strong id="scanner-health" class="healthy">Başlıyor</strong><small id="scanner-age">Public veriler bekleniyor</small>
@@ -92,13 +92,13 @@
           </section>
 
           <section class="panel balances-card" id="wallets">
-            <div class="panel-head compact"><div><p class="eyebrow">CÜZDANLAR</p><h2>Borsa dağılımı</h2></div><button class="text-btn" type="button">Yenile</button></div>
+            <div class="panel-head compact"><div><p class="eyebrow">CÜZDANLAR</p><h2>Borsa dağılımı</h2></div><button class="text-btn" type="button" id="refresh-balances">Yenile</button></div>
             <div class="exchange-balance">
-              <div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-status">API anahtarı bekleniyor</small></div><b>—</b>
+              <div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-status">API anahtarı bekleniyor</small></div><b id="bt-balance">—</b>
             </div>
             <div class="bar"><i style="width:55%"></i></div>
             <div class="exchange-balance">
-              <div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-status">API anahtarı bekleniyor</small></div><b>—</b>
+              <div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-status">API anahtarı bekleniyor</small></div><b id="bn-balance">—</b>
             </div>
             <div class="bar binance"><i style="width:45%"></i></div>
             <button class="secondary full" type="button" data-view="accounts">API hesaplarını yönet</button>
@@ -116,6 +116,37 @@
           <div class="latency-row"><span>Binance TR WebSocket</span><b id="bn-health">Bekliyor</b><i></i></div>
           <div class="latency-row"><span>Public tarama</span><b id="scan-health">Başlıyor</b><i></i></div>
           <div class="latency-row"><span>Hummingbot v2.16.0 motoru</span><b id="hummingbot-health">Bekliyor</b><i></i></div>
+          <div class="hb-controls" aria-label="Test motoru kontrolleri">
+            <button type="button" class="secondary" data-hb-action="start_test">Test motorunu hazırla</button>
+            <button type="button" class="secondary" data-hb-action="stop">Durdur</button>
+            <button type="button" class="danger" data-hb-action="emergency_stop">Acil durdur</button>
+          </div>
+          <p class="panel-note" id="hummingbot-note">Hummingbot hostu yalnızca test kontrolü için hazırdır; canlı emir kapalıdır.</p>
+        </section>
+
+        <section class="panel performance-panel" id="risk">
+          <div class="panel-head"><div><p class="eyebrow">PERFORMANS</p><h2>Sonuçlar ve risk profili</h2></div><span class="live-label">YEREL KAYIT</span></div>
+          <div class="stat-grid">
+            <div><span>Toplam net</span><strong id="total-pnl">₺0,00</strong></div>
+            <div><span>7 gün</span><strong id="week-pnl">₺0,00</strong></div>
+            <div><span>30 gün</span><strong id="month-pnl">₺0,00</strong></div>
+            <div><span>Başarılı / toplam</span><strong id="trade-ratio">0 / 0</strong></div>
+          </div>
+          <div class="qualification-summary" id="qualification-summary">Yeterlilik sayaçları yükleniyor…</div>
+          <form class="risk-form" id="risk-form">
+            <label>Test profili <select id="risk-active"><option value="true">Otomatik paper açık</option><option value="false">Otomatik paper kapalı</option></select></label>
+            <label>İşlem üst limiti (TRY)<input id="risk-max" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
+            <label>Günlük zarar limiti (TRY)<input id="risk-daily" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
+            <label>Kurtarma zarar limiti (TRY)<input id="risk-recovery" inputmode="decimal" pattern="\d+(\.\d{1,2})?" required></label>
+            <button class="secondary" type="submit">Test ayarlarını kaydet</button>
+            <small class="form-error" id="risk-error" role="alert"></small>
+          </form>
+        </section>
+
+        <section class="panel accounts-panel" id="accounts">
+          <div class="panel-head"><div><p class="eyebrow">HESAPLAR</p><h2>API ve kullanıcı profilleri</h2></div><button class="secondary" type="button" id="open-accounts">Yönet</button></div>
+          <p class="panel-note">Anahtarlar cihaz içinde şifrelenir; çekim yetkisi kullanılmaz. Her kullanıcı kendi anahtar, risk ve işlem günlüğüne sahiptir.</p>
+          <div class="account-summary"><span>BTCTürk</span><b id="account-bt-summary">Bağlı değil</b><span>Binance TR</span><b id="account-bn-summary">Bağlı değil</b></div>
         </section>
       </div>
     </main>

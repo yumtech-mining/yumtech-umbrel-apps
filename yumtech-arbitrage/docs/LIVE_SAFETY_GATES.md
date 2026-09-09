@@ -21,6 +21,13 @@ tamamlanıp test edilene kadar canlı mod kilitli kalır:
 Market satışta `quantity` coin (base) miktarı olarak kalır. Bu iki yön aynı
 dönüştürücü yolundan körlemesine geçirilemez.
 
+v0.3'te bu davranış `btcturk_order_semantics.py` içindeki bağımsız dönüştürücü
+ve `BtcTurkExchange.place_market_recovery_order` ön kontrolüyle uygulanmıştır.
+Genel Hummingbot emir yolu hâlâ yalnızca limit emir kabul eder; market BUY
+ancak açıkça taze TRY bakiyesi ve fiyatıyla çağrılan kurtarma yolundan geçer.
+Bu kodun bulunması tek başına canlı yeterlilik sayacını geçirmez; gerçek
+hesapta dolum/mutabakat tatbikatı yapılana kadar kapı `false` kalır.
+
 ## Diğer zorunlu kapılar
 
 - iki borsanın anahtar ve bakiye doğrulaması;

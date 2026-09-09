@@ -8,3 +8,8 @@ copied on top and the small patches in `patches/` are applied.
 `scripts/prepare-hummingbot.sh` verifies the upstream commit before modifying
 the worktree. It fails closed if the source or privacy patch no longer matches.
 
+BTCTürk market BUY miktar semantiği `btcturk_order_semantics.py` içinde ayrıca
+uyarlanır: Hummingbot'un base miktarı, taze fiyat/ücret/güvenlik payı ve TRY
+bakiye doğrulamasından sonra yukarı yuvarlanmış quote miktarına çevrilir. Market
+SELL base miktarı olarak kalır; genel connector yolu yanlışlıkla market BUY
+göndermemesi için yalnızca limit emir destekler.

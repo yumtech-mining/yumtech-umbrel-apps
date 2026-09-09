@@ -43,11 +43,66 @@ function renderOpportunities(payload){
 function renderAccount(data){
   state.user=data;state.csrf=data.csrf_token;$("#current-user").textContent=data.username;
   $("#add-user-button").hidden=!data.is_admin;
+  const settings=data.settings||{};
+  $("#risk-active").value=String(Boolean(settings.active));
+  $("#risk-max").value=settings.max_trade_try||"1000";
+  $("#risk-daily").value=settings.daily_loss_limit_try||"250";
+  $("#risk-recovery").value=settings.max_recovery_loss_try||"100";
   const keys=Object.fromEntries((data.credentials||[]).map(x=>[x.exchange,x]));
   for(const [exchange,id,statusId] of [["btcturk","#bt-key-state","#bt-status"],["binance_tr","#bn-key-state","#bn-status"]]){
     const item=keys[exchange];const text=!item?"Bağlı değil":item.validated_at?`Doğrulandı · ${item.key_hint}`:"Kaydedildi · doğrulama gerekli";
     $(id).textContent=text;$(statusId).textContent=text;
+    $(`#account-${exchange==="btcturk"?"bt":"bn"}-summary`).textContent=text;
   }
+}
+
+function renderBalances(payload){
+  const exchanges=Object.fromEntries((payload.exchanges||[]).map(item=>[item.exchange,item]));
+  for(const [exchange,id,statusId] of [["btcturk","#bt-balance","#bt-status"],["binance_tr","#bn-balance","#bn-status"]]){
+    const item=exchanges[exchange]||{};
+    const tryRow=(item.balances||[]).find(row=>row.asset==="TRY");
+    $(id).textContent=tryRow?tryMoney(tryRow.available):"—";
+    if(item.state==="ok")$(statusId).textContent=`TRY kullanılabilir · ${tryMoney(tryRow?.available||0)}`;
+    else if(item.state==="error")$(statusId).textContent=item.error||"Bakiye alınamadı";
+  }
+  $("#available-try").textContent=tryMoney(payload.available_try_total||0);
+}
+
+function renderSummary(payload){
+  const execution=payload.execution||{};
+  $("#today-pnl").textContent=tryMoney(execution.today_realized_profit_try||0);
+  $("#total-pnl").textContent=tryMoney(execution.realized_profit_try||0);
+  $("#week-pnl").textContent=tryMoney(execution.seven_days_realized_profit_try||0);
+  $("#month-pnl").textContent=tryMoney(execution.thirty_days_realized_profit_try||0);
+  $("#trade-ratio").textContent=`${execution.balanced||0} / ${execution.total||0}`;
+  const q=payload.qualification||{};
+  $("#qualification-summary").textContent=`Gözlem ${q.observation_hours||"0"}/72 saat · fırsat ${q.paper_opportunities||0}/100 · paper işlem ${q.paper_trades||0}/20`;
+}
+
+function renderTrades(payload){
+  const list=$("#trade-list");list.textContent="";
+  const items=payload.items||[];
+  if(!items.length){list.innerHTML='<div class="empty-state"><strong>Henüz paper işlem yok</strong><small>Motor yalnızca nitelikli fırsatları test kayıtlarına ekleyecek.</small></div>';return}
+  for(const item of items.slice(0,8)){
+    const row=document.createElement("div");row.className="trade-row";
+    const time=item.created_at?new Date(Number(item.created_at)).toLocaleString("tr-TR"):"—";
+    const pnl=item.realized_profit_try==null?"Bekliyor":tryMoney(item.realized_profit_try);
+    row.innerHTML=`<div><strong>${escapeHtml(item.pair)}</strong><small>${escapeHtml(time)}</small></div>
+      <div><strong>${escapeHtml(item.buy_exchange)} → ${escapeHtml(item.sell_exchange)}</strong><small>${escapeHtml(item.state)} · ${escapeHtml(item.mode)}</small></div>
+      <div class="amount ${Number(item.realized_profit_try||0)<0?"loss":"profit"}"><strong>${escapeHtml(pnl)}</strong><small>Gerçekleşen net</small></div>`;
+    list.appendChild(row);
+  }
+}
+
+function renderHummingbotStatus(hb){
+  const labels={idle:"Hazır · test", "test-ready":"Test hazır", stopped:"Durduruldu",
+    "emergency-stopped":"ACİL DURDURMA", blocked:"Engellendi", "not-installed":"Kurulmadı"};
+  $("#hummingbot-health").textContent=labels[hb.state]||hb.state||"Bilinmiyor";
+  $("#hummingbot-note").textContent=hb.reason||"Hummingbot hostu yalnızca test kontrolü için hazırdır; canlı emir kapalıdır.";
+  const emergency=hb.state==="emergency-stopped";
+  document.querySelectorAll("[data-hb-action]").forEach(button=>{
+    button.disabled=emergency&&button.dataset.hbAction!=="start_test";
+  });
 }
 
 async function renderQualification(){
@@ -59,7 +114,7 @@ async function renderQualification(){
 }
 
 async function refresh(){
-  try{const [me,opportunities,health]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health")]);renderAccount(me);renderOpportunities(opportunities);const hb=health.hummingbot||{};$("#hummingbot-health").textContent=hb.state==="idle"?"Hazır · test":hb.state==="not-installed"?"Kurulmadı":hb.state;await renderQualification()}
+  try{const [me,opportunities,health,summary,history,wallets]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health"),api("/api/metrics/summary"),api("/api/executions?limit=20"),api("/api/balances")]);renderAccount(me);renderOpportunities(opportunities);renderHummingbotStatus(health.hummingbot||{});renderSummary(summary);renderTrades(history);renderBalances(wallets);await renderQualification()}
   catch(error){if(/Oturum/.test(error.message))await openAuth();else $("#scanner-age").textContent=error.message}
 }
 
@@ -88,7 +143,24 @@ $("#user-form").addEventListener("submit",async event=>{event.preventDefault();$
 }catch(error){$("#user-error").textContent=error.message}});
 
 document.querySelectorAll(".chip").forEach(button=>button.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));button.classList.add("active")}));
-document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",()=>{document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x===link))}));
+document.querySelectorAll("[data-view]").forEach(link=>link.addEventListener("click",()=>{
+  document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x===link));
+  const target=document.getElementById(link.dataset.view);target?.scrollIntoView({behavior:"smooth",block:"start"});
+}));
+
+document.querySelectorAll("[data-hb-action]").forEach(button=>button.addEventListener("click",async()=>{
+  button.disabled=true;
+  try{await api("/api/hummingbot/control",{method:"POST",body:JSON.stringify({action:button.dataset.hbAction})});await refresh()}
+  catch(error){$("#hummingbot-note").textContent=error.message;button.disabled=false}
+}));
+$("#test-details")?.addEventListener("click",()=>$(".guard-card")?.scrollIntoView({behavior:"smooth",block:"center"}));
+$("#mobile-more")?.addEventListener("click",()=>$("#account-dialog").showModal());
+
+$("#risk-form")?.addEventListener("submit",async event=>{event.preventDefault();$("#risk-error").textContent="";try{
+  await api("/api/settings/test",{method:"PUT",body:JSON.stringify({active:$("#risk-active").value==="true",max_trade_try:$("#risk-max").value,daily_loss_limit_try:$("#risk-daily").value,max_recovery_loss_try:$("#risk-recovery").value})});await refresh();
+}catch(error){$("#risk-error").textContent=error.message}});
+$("#refresh-balances")?.addEventListener("click",async()=>{try{renderBalances(await api("/api/balances"))}catch(error){$("#bt-status").textContent=error.message}});
+$("#open-accounts")?.addEventListener("click",()=>$("#account-dialog").showModal());
 
 const liveDialog=$("#live-dialog"),liveInput=$("#live-confirm"),confirmLive=$("#confirm-live"),testButton=$("#test-mode"),liveButton=$("#live-mode"),notice=$("#mode-notice");
 liveButton.addEventListener("click",async()=>{const result=await renderQualification();liveInput.value="";liveInput.disabled=!result.eligible;confirmLive.disabled=true;liveDialog.showModal();if(result.eligible)liveInput.focus()});

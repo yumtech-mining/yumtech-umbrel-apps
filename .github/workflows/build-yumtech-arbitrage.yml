@@ -28,6 +28,17 @@ jobs:
       - run: pip install -e './yumtech-arbitrage[test]'
       - run: pytest -q
         working-directory: yumtech-arbitrage
+      - name: Validate runtime and dashboard sources
+        run: |
+          bash -n yumtech-arbitrage/app/entrypoint.sh
+          bash -n yumtech-arbitrage/hummingbot-runtime/entrypoint.sh
+          node --check yumtech-arbitrage/dashboard/app.js
+          python -m compileall -q yumtech-arbitrage/app yumtech-arbitrage/hummingbot-runtime
+      - name: Validate Umbrel Compose contract
+        run: |
+          APP_DATA_DIR=/tmp/yumtech-arbitrage-data \
+            docker compose --project-name yumtech-arbitrage-validation \
+            --file yumtech-arbitrage/docker-compose.yml config >/dev/null
 
   build:
     needs: test
@@ -49,7 +60,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:0.3.0
+            ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:0.3.1
             ghcr.io/${{ github.repository_owner }}/yumtech-arbitrage:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -74,7 +85,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:0.3.0
+            ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:0.3.1
             ghcr.io/${{ github.repository_owner }}/yumtech-hummingbot:latest
           cache-from: type=gha,scope=hummingbot
           cache-to: type=gha,mode=max,scope=hummingbot

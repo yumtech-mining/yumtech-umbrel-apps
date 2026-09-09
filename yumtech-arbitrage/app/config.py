@@ -25,5 +25,9 @@ class Settings(BaseSettings):
     def hummingbot_status_path(self) -> Path:
         return self.data_dir / "hummingbot-status.json"
 
+    @property
+    def hummingbot_control_path(self) -> Path:
+        return self.data_dir / "hummingbot-control.json"
+
 
 settings = Settings()

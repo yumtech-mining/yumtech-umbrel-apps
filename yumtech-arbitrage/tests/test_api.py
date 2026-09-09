@@ -27,6 +27,11 @@ def test_owner_session_csrf_and_separate_user(tmp_path):
             "active": True, "max_trade_try": "1000", "daily_loss_limit_try": "250",
             "max_recovery_loss_try": "100"})
         assert test_settings.status_code == 200 and test_settings.json()["active"] is True
+        hb_control = client.post("/api/hummingbot/control", headers={"X-CSRF-Token": csrf},
+                                 json={"action": "start_test"})
+        assert hb_control.status_code == 200
+        assert hb_control.json()["command"]["mode"] == "test"
+        assert main.settings.hummingbot_control_path.exists()
         main.scanner.opportunities = [{
             "pair": "BTC/TRY", "buy_exchange": "BTCTürk", "sell_exchange": "Binance TR",
             "base_amount": "0.001", "buy_vwap": "1000000", "sell_vwap": "1010000",

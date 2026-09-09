@@ -20,12 +20,14 @@ from .execution import (ArbitrageExecutionEngine, PaperAdapter,
                         RecoveryLimitExceeded, opportunity_from_mapping)
 from .exchanges import BTCTurkPublic
 from .hummingbot_status import read_status
+from .hummingbot_control import HummingbotControlError, write_control
 from .scanner import MarketScanner
 from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create_master_key, new_session_token, passwords
 
 
 db: Database
 master_key: bytes
+_balance_cache: dict[tuple[int, str], tuple[float, dict]] = {}
 scanner = MarketScanner(Decimal(settings.target_try), Decimal(settings.min_net_profit_pct),
                         settings.scanner_interval_seconds)
 execution_engine: ArbitrageExecutionEngine | None = None
@@ -58,7 +60,7 @@ async def lifespan(_: FastAPI):
         pass
 
 
-app = FastAPI(title="YUMTECH Arbitrage", version="0.3.0-dev", lifespan=lifespan,
+app = FastAPI(title="YUMTECH Arbitrage", version="0.3.1-dev", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 
@@ -84,6 +86,86 @@ class TestSettingsUpdate(BaseModel):
     max_trade_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
     daily_loss_limit_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
     max_recovery_loss_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+
+
+class HummingbotControlRequest(BaseModel):
+    action: str = Field(pattern=r"^(start_test|stop|refresh|emergency_stop)$")
+
+
+def _decimal_text(value) -> str:
+    try:
+        return format(Decimal(str(value or "0")), "f")
+    except Exception:
+        return "0"
+
+
+def _normalize_balances(exchange: str, body: dict) -> list[dict]:
+    """Normalize both exchange response shapes without exposing credentials."""
+
+    data = body.get("data", body) if isinstance(body, dict) else {}
+    if exchange == "btcturk":
+        rows = data if isinstance(data, list) else data.get("balances", [])
+    else:
+        rows = data if isinstance(data, list) else data.get("balances", data.get("list", [])) if isinstance(data, dict) else []
+    normalized = []
+    for item in rows or []:
+        if not isinstance(item, dict):
+            continue
+        asset = str(item.get("asset", item.get("coin", ""))).upper()
+        if not asset:
+            continue
+        available = item.get("free", item.get("available", item.get("availableBalance", "0")))
+        locked = item.get("locked", item.get("freeze", item.get("frozen", "0")))
+        total = item.get("balance", item.get("total", item.get("walletBalance")))
+        if total is None:
+            try:
+                total = Decimal(str(available or "0")) + Decimal(str(locked or "0"))
+            except Exception:
+                total = "0"
+        normalized.append({"asset": asset, "available": _decimal_text(available),
+                           "locked": _decimal_text(locked), "total": _decimal_text(total)})
+    return sorted(normalized, key=lambda value: value["asset"])
+
+
+async def _fetch_authenticated_balances(user_id: int, exchange: str) -> dict:
+    cached = _balance_cache.get((user_id, exchange))
+    if cached and time.monotonic() - cached[0] < 20:
+        return cached[1]
+    with db.connect() as conn:
+        row = conn.execute("SELECT api_key_enc,secret_enc,validated_at FROM credentials "
+                           "WHERE user_id=? AND exchange=?", (user_id, exchange)).fetchone()
+    if not row:
+        return {"exchange": exchange, "state": "not-configured", "balances": []}
+    try:
+        api_key = decrypt_secret(master_key, user_id, exchange, row["api_key_enc"])
+        secret = decrypt_secret(master_key, user_id, exchange, row["secret_enc"])
+        async with httpx.AsyncClient(timeout=8, trust_env=False) as client:
+            if exchange == "btcturk":
+                response = await client.get("https://api.btcturk.com/api/v1/users/balances",
+                                            headers=BTCTurkPublic.auth_headers(api_key, secret))
+                response.raise_for_status()
+                body = response.json()
+            else:
+                timestamp = int(time.time() * 1000)
+                query = f"timestamp={timestamp}&recvWindow=5000"
+                import hashlib, hmac
+                signature = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+                response = await client.get(
+                    f"https://www.binance.tr/open/v1/account/spot?{query}&signature={signature}",
+                    headers={"X-MBX-APIKEY": api_key})
+                response.raise_for_status()
+                body = response.json()
+                if int(body.get("code", 0)) != 0:
+                    raise ValueError("account response rejected")
+        result = {"exchange": exchange, "state": "ok", "validated": bool(row["validated_at"]),
+                  "balances": _normalize_balances(exchange, body),
+                  "updated_at_ms": int(time.time() * 1000)}
+    except Exception:
+        result = {"exchange": exchange, "state": "error", "validated": bool(row["validated_at"]),
+                  "balances": [], "updated_at_ms": int(time.time() * 1000),
+                  "error": "Bakiye alınamadı; bağlantı ve API izinlerini kontrol edin"}
+    _balance_cache[(user_id, exchange)] = (time.monotonic(), result)
+    return result
 
 
 def current_user(session: str | None = Cookie(default=None, alias="yumtech_session")) -> dict:
@@ -120,6 +202,7 @@ def health():
             "scanner": scanner.running, "last_success_ms": scanner.last_success_ms,
             "market_snapshot_id": scanner.snapshot_id,
             "paper_coordinator": bool(paper_coordinator and paper_coordinator.running),
+            "paper_coordinator_enabled": bool(paper_coordinator and paper_coordinator.enabled),
             "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None,
             "market_data": scanner.market_data_health(),
             "hummingbot": read_status(settings.hummingbot_status_path)}
@@ -128,6 +211,41 @@ def health():
 @app.get("/api/hummingbot/status")
 def hummingbot_status(user: dict = Depends(current_user)):
     return read_status(settings.hummingbot_status_path)
+
+
+@app.get("/api/balances")
+async def balances(user: dict = Depends(current_user)):
+    """Read-only authenticated balances, normalized for the dashboard."""
+
+    values = await asyncio.gather(
+        _fetch_authenticated_balances(user["id"], "btcturk"),
+        _fetch_authenticated_balances(user["id"], "binance_tr"),
+    )
+    try_balance = Decimal("0")
+    for exchange in values:
+        for item in exchange.get("balances", []):
+            if item["asset"] == "TRY":
+                try_balance += Decimal(item["available"])
+    return {"exchanges": values, "available_try_total": str(try_balance)}
+
+
+@app.post("/api/hummingbot/control")
+def hummingbot_control(payload: HummingbotControlRequest, user: dict = Depends(require_csrf)):
+    """Send an allow-listed test-mode command over the local shared volume."""
+
+    try:
+        command = write_control(settings.hummingbot_control_path,
+                                action=payload.action, user_id=user["id"])
+    except HummingbotControlError as exc:
+        raise HTTPException(422, str(exc))
+    if paper_coordinator:
+        if payload.action == "start_test":
+            paper_coordinator.set_enabled(True)
+        elif payload.action in {"stop", "emergency_stop"}:
+            paper_coordinator.set_enabled(False)
+    db.audit(user["id"], "hummingbot_control", json.dumps({"action": payload.action,
+                                                               "command_id": command["id"]}))
+    return {"command": command, "status": read_status(settings.hummingbot_status_path)}
 
 
 @app.get("/api/bootstrap")
@@ -291,6 +409,8 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
     except RecoveryLimitExceeded:
         raise HTTPException(409, "Kurtarma zarar limiti aşıldı; motor güvenli durumda durduruldu")
     db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id, "state": result.state.value}))
+    if result.state.value == "BALANCED_FILL":
+        db.record_paper_trade(user["id"])
     return {"intent_id": result.intent_id, "state": result.state.value,
             "realized_profit_try": str(result.realized_profit_try), "exposure_base": str(result.exposure_base),
             "recovered": result.recovery_fill is not None}
@@ -301,15 +421,47 @@ def executions(limit: int = 100, user: dict = Depends(current_user)):
     return {"items": db.list_executions(user["id"], limit)}
 
 
+@app.get("/api/metrics/summary")
+def metrics_summary(user: dict = Depends(current_user)):
+    """Return aggregate, non-secret metrics for the operations dashboard."""
+
+    return {
+        "execution": db.execution_summary(user["id"]),
+        "qualification": db.qualification_metrics(user["id"]),
+        "market_data": scanner.market_data_health(),
+        "hummingbot": read_status(settings.hummingbot_status_path),
+        "last_success_ms": scanner.last_success_ms,
+    }
+
+
 @app.get("/api/live/qualification")
 def qualification(user: dict = Depends(current_user)):
     with db.connect() as conn:
         validated = conn.execute("SELECT COUNT(*) FROM credentials WHERE user_id=? AND validated_at IS NOT NULL", (user["id"],)).fetchone()[0]
         risk = conn.execute("SELECT max_trade_try,daily_loss_limit_try,max_recovery_loss_try FROM user_settings WHERE user_id=?", (user["id"],)).fetchone()
-    q = LiveQualification(validated == 2, Decimal("0"), len(scanner.opportunities), 0, False,
-                          all(Decimal(value) > 0 for value in risk), True)
+    metrics = db.qualification_metrics(user["id"])
+    hb_status = read_status(settings.hummingbot_status_path)
+    q = LiveQualification(
+        validated == 2,
+        Decimal(metrics["observation_hours"]),
+        metrics["paper_opportunities"],
+        metrics["paper_trades"],
+        metrics["failure_drills_ok"],
+        bool(risk) and all(Decimal(value) > 0 for value in risk),
+        bool(hb_status.get("telemetry_disabled")) and not hb_status.get("live_orders_enabled", True),
+        metrics["btcturk_market_buy_conversion_safe"],
+    )
     failures = q.failures()
-    return {"eligible": not failures and settings.live_trading_armed, "failures": failures + ([] if settings.live_trading_armed else ["Cihaz canlı işlem için silahlı değil"])}
+    return {
+        "eligible": not failures and settings.live_trading_armed,
+        "failures": failures + ([] if settings.live_trading_armed else ["Cihaz canlı işlem için silahlı değil"]),
+        "metrics": metrics,
+        "gates": {"api_connections": q.api_connections_ok, "observation_72h": q.observation_hours >= 72,
+                  "paper_opportunities_100": q.paper_opportunities >= 100,
+                  "paper_trades_20": q.paper_trades >= 20, "failure_drills": q.failure_drills_ok,
+                  "risk_limits": q.risk_limits_set, "telemetry_blocked": q.telemetry_blocked,
+                  "btcturk_market_buy_conversion": q.btcturk_market_buy_conversion_safe},
+    }
 
 
 @app.post("/api/live/enable")
