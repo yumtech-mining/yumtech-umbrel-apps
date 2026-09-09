@@ -27,11 +27,11 @@ def test_live_or_unknown_commands_cannot_be_written(tmp_path: Path):
 def test_paper_config_is_pair_normalized_and_contains_no_credentials(tmp_path: Path):
     path = tmp_path / "paper.json"
     config = write_paper_config(
-        path, user_id=7, pairs=["btc/try", "ETH-TRY", "BTC/TRY"],
+        path, user_id=7, pairs=["btc/try", "ETH-TRY", "BTC/TRY", "MANTRA"],
         profile={"btcturk_budget_try": "750", "binance_tr_budget_try": "900"},
         fee_status={"mode": "taker"}, min_profit_pct="0.40",
     )
-    assert config["trading_pairs"] == ["BTC-TRY", "ETH-TRY"]
+    assert config["trading_pairs"] == ["BTC-TRY", "ETH-TRY", "MANTRA-TRY"]
     assert config["btcturk_budget_try"] == "750"
     assert "api_key" not in path.read_text().lower()
     assert path.stat().st_mode & 0o777 == 0o600

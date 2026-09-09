@@ -23,6 +23,21 @@ class HummingbotControlError(ValueError):
     pass
 
 
+def normalize_hummingbot_pairs(pairs: Any) -> list[str]:
+    """Convert public base symbols to Hummingbot's BASE-TRY pair format."""
+    normalized: set[str] = set()
+    for pair in pairs or []:
+        raw = str(pair).strip().upper().replace("/", "-").replace("_", "-")
+        if not raw:
+            continue
+        if "-" not in raw:
+            raw = f"{raw}-TRY"
+        base, quote = raw.split("-", 1)
+        if base and quote == "TRY":
+            normalized.add(f"{base}-TRY")
+    return sorted(normalized)
+
+
 def write_paper_config(path: Path, *, user_id: int, pairs: list[str], profile: dict,
                        fee_status: dict, min_profit_pct: str, event_path: str | None = None) -> dict[str, Any]:
     """Write a non-secret native Hummingbot PaperTrade configuration.
@@ -33,7 +48,7 @@ def write_paper_config(path: Path, *, user_id: int, pairs: list[str], profile: d
     """
     if not isinstance(user_id, int) or user_id < 1:
         raise HummingbotControlError("Geçersiz kullanıcı")
-    safe_pairs = sorted({str(pair).upper().replace("/", "-") for pair in pairs if pair})
+    safe_pairs = normalize_hummingbot_pairs(pairs)
     payload = {
         "version": PAPER_CONFIG_VERSION,
         "user_id": user_id,

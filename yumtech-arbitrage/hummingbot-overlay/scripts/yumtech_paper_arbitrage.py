@@ -55,7 +55,17 @@ class YumtechPaperArbitrageConfig(StrategyV2ConfigBase):
     def normalize_pairs(cls, value):
         if value is None:
             return []
-        return sorted({str(pair).upper().replace("/", "-") for pair in value if str(pair).strip()})
+        normalized = set()
+        for pair in value:
+            raw = str(pair).strip().upper().replace("/", "-").replace("_", "-")
+            if not raw:
+                continue
+            if "-" not in raw:
+                raw = f"{raw}-TRY"
+            base, quote = raw.split("-", 1)
+            if base and quote == "TRY":
+                normalized.add(f"{base}-TRY")
+        return sorted(normalized)
 
     def update_markets(self, markets: MarketDict) -> MarketDict:
         for pair in self.trading_pairs:
