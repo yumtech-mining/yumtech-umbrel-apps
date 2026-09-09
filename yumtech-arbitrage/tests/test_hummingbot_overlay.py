@@ -40,3 +40,17 @@ def test_btcturk_signature_matches_known_vector():
     assert module.generate_signature(
         "test-key", "dGVzdC1zZWNyZXQ=", 1700000000123
     ) == "XORLW3AaT5ikKu+tz7ToTvU+f6jr7ndvb/gZ4aPBlx0="
+
+
+def test_btcturk_private_endpoints_share_a_global_throttle_pool():
+    constants = (
+        ROOT
+        / "hummingbot-overlay"
+        / "hummingbot"
+        / "connector"
+        / "exchange"
+        / "btcturk"
+        / "btcturk_constants.py"
+    ).read_text()
+    assert "LinkedLimitWeightPair(PRIVATE_POOL)" in constants
+    assert "USER_TRADES_PATH_URL" in constants
