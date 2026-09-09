@@ -1,0 +1,19 @@
+diff --git a/hummingbot/client/config/client_config_map.py b/hummingbot/client/config/client_config_map.py
+--- a/hummingbot/client/config/client_config_map.py
++++ b/hummingbot/client/config/client_config_map.py
+@@ -797,6 +797,6 @@ class ClientConfigMap(BaseClientModel):
+     )
+     send_error_logs: bool = Field(
+-        default=True,
++        default=False,
+         description="Error log sharing",
+         json_schema_extra={"prompt": lambda cm: "Would you like to send error logs to hummingbot? (True/False)"},
+     )
+@@ -835,6 +835,6 @@ class ClientConfigMap(BaseClientModel):
+ 
+     anonymized_metrics_mode: Union[tuple(METRICS_MODES.values())] = Field(
+-        default=AnonymizedMetricsEnabledMode(),
++        default=AnonymizedMetricsDisabledMode(),
+         description="Whether to enable aggregated order and trade data collection",
+         json_schema_extra={"prompt": lambda cm: f"Select the desired metrics mode ({'/'.join(list(METRICS_MODES.keys()))})"},
+     )
