@@ -12,16 +12,16 @@ kilitli kalır.
 | 2. Piyasa taraması | Tamamlandı | BTCTürk + Binance TR ortak aktif TRY pariteleri, WebSocket önceliği |
 | 3. Paper yürütme | Tamamlandı | Hummingbot PaperTrade, 5 sn gecikme, canlı derinlik, kısmi dolum, sanal cüzdan, tek-bacak kurtarma, SQLite işlem/audit günlüğü |
 | 4. BOT dashboard | Tamamlandı | Sayfa tabanlı mobil arayüz, iki API formu, borsa başına TRY bütçesi |
-| 5. Umbrel release | Sırada | v0.4.0 PR merge, ardından GHCR amd64/arm64 imaj yayınlama |
+| 5. Umbrel release | Tamamlandı | PR #5 merge edildi; Actions run 15 ile GHCR amd64/arm64 0.4.0 imajları yayınlandı |
 | 6. Kullanıcı testi | Bekliyor | 72 saat kesintisiz gözlem, 100 fırsat, 20 paper işlem |
 | 7. Canlı yeterlilik | Kilitli | Bağlayıcı fixture'ları, failure drill'leri ve ikinci onay |
 
 ## Kurulumdan sonraki sıra
 
-1. v0.4.0 dalındaki PR'ı `main` dalına merge edin ve push workflow'unun iki
-   imajı da yayınladığını doğrulayın.
+1. v0.4.0 PR #5 `main` dalına merge edildi; Actions run 15 iki imajı da
+   amd64/arm64 olarak GHCR'ye başarıyla yayınladı.
 2. Umbrel Community App Store kaynağını yenileyin; **YUMTECH Arbitrage 0.4.0**
-   uygulamasını güncelleyin veya kurun.
+   uygulamasını güncelleyin veya kurun (veri klasörünü silmeyin).
 3. İlk açılışta cihaz yöneticisi hesabı, ardından gerekirse ayrı aile profili
    oluşturun. Aynı anda yalnızca bir profilin otomatik paper motoru aktif olur.
 4. **BOT** sayfasında BTCTürk ve Binance TR anahtarlarını girin. Borsa tarafında
