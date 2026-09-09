@@ -23,3 +23,5 @@ def test_hummingbot_runtime_is_pinned_idle_and_reporting_disabled():
     assert "YUMTECH_TELEMETRY_DISABLED: \"true\"" in compose
     assert 'command: ["python", "-u", "/opt/yumtech-control-supervisor.py"]' in compose
     assert "control_supervisor.py" in dockerfile
+    assert "api.coinalpha.com:127.0.0.1" in compose
+    assert "reporting.hummingbot.org:127.0.0.1" in compose
