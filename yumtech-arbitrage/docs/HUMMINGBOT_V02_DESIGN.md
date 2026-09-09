@@ -1,8 +1,9 @@
-# YUMTECH Arbitrage v0.3 — Hummingbot Tabanlı Tasarım
+# YUMTECH Arbitrage v0.4 — Hummingbot Tabanlı Tasarım
 
-Durum: ARM64 motor hostu ve bağlayıcılar paketlendi. Motor hazır/boşta host
-olarak çalışır; canlı işlem kapalıdır. Dashboard ile runtime arasındaki yerel
-test kontrol köprüsü ve kalıcı yeterlilik sayaçları v0.3'e eklenmiştir.
+Durum: ARM64 motoru, bağlayıcılar ve PaperTrade stratejisi paketlendi. Motor
+kurulumda boşta başlar; **Test motorunu hazırla** komutuyla resmi v2.16.0
+PaperTrade süreci çalışır. Canlı işlem kapalıdır. Dashboard ile runtime
+arasındaki yerel test kontrol köprüsü ve kalıcı yeterlilik sayaçları korunur.
 
 ## 1. Temel karar
 
@@ -33,8 +34,9 @@ Sistem dört ana bileşenden oluşur:
 1. **Hummingbot çekirdeği:** emir izleme, bakiye, saat eşitleme, hız sınırı ve
    kalıcı işlem kayıtları.
 2. **YUMTECH bağlayıcıları:** BTCTürk ve Binance TR API uyarlaması.
-3. **SafeArbitrageController:** bütün ortak TRY paritelerini keşfeder, derinlik
-   fiyatını ve gerçek net kârı hesaplar, risk koşulları uygunsa yürütücü açar.
+3. **YUMTECH PaperTrade stratejisi:** bütün ortak TRY paritelerini keşfeder,
+resmi paper connector order-book derinliğini, ücretleri ve risk koşullarını
+uygunsa iki market emriyle yürütür.
 4. **Yerel dashboard köprüsü:** Hummingbot olaylarını ve SQLite kayıtlarını
    salt-okunur şekilde API'ye aktarır.
 
@@ -75,12 +77,15 @@ tüm kesintilerden sonra net kâr eşiğini geçiyorsa yürütülebilir sayılı
 
 ## 5. Güvenli emir yaşam döngüsü
 
-Standart Hummingbot ArbitrageExecutor iki piyasa emrini eşzamanlı başlatır.
-YUMTECH `SafeArbitrageExecutor`, bu çekirdeği aşağıdaki ek durumlarla genişletir:
+Standart Hummingbot PaperTrade kuyruğu iki piyasa emrini eşzamanlı başlatır.
+YUMTECH stratejisi, tek bacak farkını hesaplayıp önceden belirlenen zarar
+sınırı içindeyse kalan miktar için üçüncü bir market kurtarma emri gönderir.
+Bu akış dashboard köprüsüne üç ayrı bacak ve gerçek dolum/ücret metadatası
+olarak aktarılır. Aşağıdaki durum makinesi yerel kayıt motorunda da aynıdır:
 
 | Durum | Anlamı | Sonraki hareket |
 | --- | --- | --- |
-| `READY` | Fırsat ve bakiyeler doğrulandı | İki IOC limit emrini hazırla |
+| `READY` | Fırsat ve bakiyeler doğrulandı | İki PaperTrade market emrini hazırla |
 | `SUBMITTING` | Emirler gönderiliyor | Emir kimliklerini ayrı ayrı izle |
 | `BALANCED_FILL` | İki bacak aynı miktarda gerçekleşti | Kârı kesinleştir ve kaydet |
 | `PARTIAL_IMBALANCE` | Gerçekleşen miktarlar farklı | Kalan emri iptal et, farkı sınırla |
@@ -88,10 +93,12 @@ YUMTECH `SafeArbitrageExecutor`, bu çekirdeği aşağıdaki ek durumlarla geni�
 | `FAILED_SAFE` | Kurtarma tamamlanamadı | Yeni işlemleri kilitle, operatör uyarısı üret |
 | `HALTED` | Acil durdurma etkin | Yeni emir gönderme |
 
-Piyasa emri yerine fiyat korumalı IOC limit emri tercih edilir. Böylece kabul
-edilebilir en kötü fiyat önceden sınırlandırılır. İki borsadaki emirler atomik
-olmadığından risk tamamen yok olmaz; maksimum tek-bacak tutarı ve maksimum
-kurtarma zararı zorunlu ayarlardır.
+PaperTrade aşamasında resmi Hummingbot market emri kuyruğu (5 saniye) ve canlı
+order-book derinliği kullanılır; bu nedenle sonuç ticker fiyatına sabitlenmez.
+Canlı aşama için ayrıca fiyat korumalı IOC limit emri ve BTCTürk TRY quote
+preflight'i zorunlu olacaktır. İki borsadaki emirler atomik olmadığından risk
+tamamen yok olmaz; maksimum tek-bacak tutarı ve maksimum kurtarma zararı
+zorunlu ayarlardır.
 
 ## 6. Risk kuralları
 
@@ -176,11 +183,11 @@ Hummingbot'un beklediği base miktarına çevrilir. Aynı miktar satış bacağ�
 TRY bütçesini de aşamaz; genel işlem ve kurtarma limitleri daha sıkıysa onlar
 uygulanır.
 
-Bu ekran Hummingbot hostunu `test-ready` konumuna getirir; v0.3.2'de host
-strateji veya canlı emir başlatmaz. Gerçek Hummingbot controller'ının
-`order_amount` alanına bu dönüştürülmüş base miktarını verme adımı, bağlayıcı
-fixture ve tek-bacak tatbikatları tamamlandıktan sonra ayrı bir canlı-yürütme
-sürümünde açılacaktır.
+Bu ekran Hummingbot hostuna gizli olmayan paper konfigürasyonu yazar. **Test
+motorunu hazırla** ile `yumtech_paper_arbitrage.py` v2.16.0 PaperTrade
+connector'larında çalışır; order-book eşleşme gecikmesi, derinlik, bakiye ve
+komisyonlar resmi motor tarafından uygulanır. Canlı bağlayıcı ve gerçek emir
+yolu bu sürümde yoktur.
 
 ## 8.3 Testten canlı moda geçiş
 
@@ -225,14 +232,13 @@ Canlı işleme geçmeden önce aşağıdakiler tamamlanmalıdır:
 6. Tek-bacak kurtarma ve günlük zarar kilidi testi.
 7. Ağ trafiğinde Hummingbot raporlama isteği bulunmadığının doğrulanması.
 
-### v0.3 kontrol komutları
+### v0.4 kontrol komutları
 
 Dashboard'ın **Test motorunu hazırla**, **Durdur** ve **Acil durdur** düğmeleri
-yalnızca `/data/hummingbot-control.json` dosyasına atomik, kısa ömürlü bir
-komut yazar. Runtime `control_supervisor.py` dosyayı okur ve durum işaretini
-günceller. Komut şemasında canlı başlatma olmadığı için UI, ortam değişkeni ya
-da HTTP isteği canlı işlem açamaz. Gerçek Hummingbot controller'ı ancak bu
-köprü, connector fixture'ları ve tek-bacak kurtarma testleri tamamlandıktan
-sonra ayrı bir sürümde etkinleştirilebilir.
+yalnızca `/data/hummingbot-control.json` ve gizli olmayan
+`/data/hummingbot-paper-config.json` dosyalarını atomik yazar. Runtime
+`control_supervisor.py` dosyaları doğrular, yalnızca paper connector'larını
+oluşturur ve v2.16.0 engine sürecini yönetir. Komut şemasında canlı başlatma
+olmadığı için UI, ortam değişkeni ya da HTTP isteği canlı işlem açamaz.
 
 Bu kapılardan biri geçmezse canlı mod açılamaz.

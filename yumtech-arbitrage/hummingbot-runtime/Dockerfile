@@ -4,6 +4,7 @@ FROM hummingbot/hummingbot:version-2.16.0
 
 USER root
 COPY hummingbot-overlay/hummingbot/ /home/hummingbot/hummingbot/
+COPY hummingbot-overlay/scripts/ /home/hummingbot/scripts/
 COPY hummingbot-overlay/patches/0001-disable-telemetry-by-default.patch /opt/yumtech-telemetry.patch
 COPY hummingbot/conf_client.yml /opt/yumtech-conf_client.yml
 COPY hummingbot-runtime/entrypoint.sh /usr/local/bin/yumtech-hummingbot

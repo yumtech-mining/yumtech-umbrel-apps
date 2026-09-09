@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS user_settings (
  max_trade_try TEXT NOT NULL DEFAULT '1000', daily_loss_limit_try TEXT NOT NULL DEFAULT '250',
  max_recovery_loss_try TEXT NOT NULL DEFAULT '100', active INTEGER NOT NULL DEFAULT 0,
  btcturk_budget_try TEXT NOT NULL DEFAULT '1000', binance_tr_budget_try TEXT NOT NULL DEFAULT '1000',
+ paper_backend TEXT NOT NULL DEFAULT 'hummingbot_paper',
+ fee_mode TEXT NOT NULL DEFAULT 'taker' CHECK(fee_mode IN ('maker','taker')),
+ btcturk_maker_fee_rate TEXT NOT NULL DEFAULT '0.0015',
+ btcturk_taker_fee_rate TEXT NOT NULL DEFAULT '0.0015',
+ binance_tr_maker_fee_rate TEXT NOT NULL DEFAULT '0.0015',
+ binance_tr_taker_fee_rate TEXT NOT NULL DEFAULT '0.0015',
+ fee_source TEXT NOT NULL DEFAULT 'connector-default',
+ fees_verified_at INTEGER,
+ paper_initial_try_multiplier TEXT NOT NULL DEFAULT '10',
  observation_started_at INTEGER, observation_last_success_at INTEGER,
  paper_opportunities INTEGER NOT NULL DEFAULT 0, paper_trades INTEGER NOT NULL DEFAULT 0,
  failure_drills_ok INTEGER NOT NULL DEFAULT 0,
@@ -51,6 +60,9 @@ CREATE TABLE IF NOT EXISTS execution_legs (
  requested_base TEXT NOT NULL, requested_price TEXT NOT NULL,
  filled_base TEXT NOT NULL DEFAULT '0', average_price TEXT,
  fee_try TEXT NOT NULL DEFAULT '0', external_order_id TEXT, status TEXT NOT NULL,
+ fee_rate TEXT NOT NULL DEFAULT '0', fee_asset TEXT NOT NULL DEFAULT 'TRY',
+ fill_source TEXT NOT NULL DEFAULT 'paper', slippage_try TEXT NOT NULL DEFAULT '0',
+ latency_ms INTEGER NOT NULL DEFAULT 0,
  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS execution_events (
@@ -87,9 +99,32 @@ class Database:
                 "paper_trades": "ALTER TABLE user_settings ADD COLUMN paper_trades INTEGER NOT NULL DEFAULT 0",
                 "failure_drills_ok": "ALTER TABLE user_settings ADD COLUMN failure_drills_ok INTEGER NOT NULL DEFAULT 0",
                 "btcturk_market_buy_conversion_safe": "ALTER TABLE user_settings ADD COLUMN btcturk_market_buy_conversion_safe INTEGER NOT NULL DEFAULT 0",
+                "paper_backend": "ALTER TABLE user_settings ADD COLUMN paper_backend TEXT NOT NULL DEFAULT 'hummingbot_paper'",
+                "fee_mode": "ALTER TABLE user_settings ADD COLUMN fee_mode TEXT NOT NULL DEFAULT 'taker'",
+                "btcturk_maker_fee_rate": "ALTER TABLE user_settings ADD COLUMN btcturk_maker_fee_rate TEXT NOT NULL DEFAULT '0.0015'",
+                "btcturk_taker_fee_rate": "ALTER TABLE user_settings ADD COLUMN btcturk_taker_fee_rate TEXT NOT NULL DEFAULT '0.0015'",
+                "binance_tr_maker_fee_rate": "ALTER TABLE user_settings ADD COLUMN binance_tr_maker_fee_rate TEXT NOT NULL DEFAULT '0.0015'",
+                "binance_tr_taker_fee_rate": "ALTER TABLE user_settings ADD COLUMN binance_tr_taker_fee_rate TEXT NOT NULL DEFAULT '0.0015'",
+                "fee_source": "ALTER TABLE user_settings ADD COLUMN fee_source TEXT NOT NULL DEFAULT 'connector-default'",
+                "fees_verified_at": "ALTER TABLE user_settings ADD COLUMN fees_verified_at INTEGER",
+                "paper_initial_try_multiplier": "ALTER TABLE user_settings ADD COLUMN paper_initial_try_multiplier TEXT NOT NULL DEFAULT '10'",
             }
             for column, statement in migrations.items():
                 if column not in settings_columns:
+                    db.execute(statement)
+
+            # Fill telemetry was added after the first Umbrel release. Add it
+            # column-by-column so an existing database is upgraded in place.
+            leg_columns = {row[1] for row in db.execute("PRAGMA table_info(execution_legs)")}
+            leg_migrations = {
+                "fee_rate": "ALTER TABLE execution_legs ADD COLUMN fee_rate TEXT NOT NULL DEFAULT '0'",
+                "fee_asset": "ALTER TABLE execution_legs ADD COLUMN fee_asset TEXT NOT NULL DEFAULT 'TRY'",
+                "fill_source": "ALTER TABLE execution_legs ADD COLUMN fill_source TEXT NOT NULL DEFAULT 'paper'",
+                "slippage_try": "ALTER TABLE execution_legs ADD COLUMN slippage_try TEXT NOT NULL DEFAULT '0'",
+                "latency_ms": "ALTER TABLE execution_legs ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, statement in leg_migrations.items():
+                if column not in leg_columns:
                     db.execute(statement)
 
     @contextmanager
@@ -144,10 +179,14 @@ class Database:
         with self.connect() as db:
             db.execute(
                 "UPDATE execution_legs SET filled_base=?,average_price=?,fee_try=?,external_order_id=?,"
-                "status=?,updated_at=? WHERE intent_id=? AND exchange=? AND side=?",
+                "status=?,fee_rate=?,fee_asset=?,fill_source=?,slippage_try=?,latency_ms=?,updated_at=? "
+                "WHERE intent_id=? AND exchange=? AND side=?",
                 (values["filled_base"], values.get("average_price"), values["fee_try"],
-                 values.get("external_order_id"), values["status"], int(time.time() * 1000),
-                intent_id, exchange, side),
+                 values.get("external_order_id"), values["status"], values.get("fee_rate", "0"),
+                 values.get("fee_asset", "TRY"), values.get("fill_source", "paper"),
+                 values.get("slippage_try", "0"), int(values.get("latency_ms", 0) or 0),
+                 int(time.time() * 1000),
+                 intent_id, exchange, side),
             )
 
     def add_execution_leg(self, intent_id: str, leg: dict) -> None:
@@ -155,11 +194,14 @@ class Database:
         with self.connect() as db:
             db.execute(
                 "INSERT INTO execution_legs(intent_id,exchange,side,requested_base,requested_price,"
-                "filled_base,average_price,fee_try,external_order_id,status,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "filled_base,average_price,fee_try,external_order_id,status,fee_rate,fee_asset,"
+                "fill_source,slippage_try,latency_ms,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (intent_id, leg["exchange"], leg["side"], leg["requested_base"], leg["requested_price"],
                  leg["filled_base"], leg["average_price"], leg["fee_try"], leg["external_order_id"],
-                 leg["status"], now, now),
+                 leg["status"], leg.get("fee_rate", "0"), leg.get("fee_asset", "TRY"),
+                 leg.get("fill_source", "paper"), leg.get("slippage_try", "0"),
+                 int(leg.get("latency_ms", 0) or 0), now, now),
             )
 
     def list_executions(self, user_id: int, limit: int = 100) -> list[dict]:
@@ -171,7 +213,8 @@ class Database:
             for intent in intents:
                 intent["legs"] = [dict(row) for row in db.execute(
                     "SELECT exchange,side,requested_base,requested_price,filled_base,average_price,"
-                    "fee_try,external_order_id,status,created_at,updated_at FROM execution_legs WHERE intent_id=? ORDER BY id",
+                    "fee_try,external_order_id,status,fee_rate,fee_asset,fill_source,slippage_try,"
+                    "latency_ms,created_at,updated_at FROM execution_legs WHERE intent_id=? ORDER BY id",
                     (intent["id"],),
                 )]
             return intents
@@ -196,9 +239,37 @@ class Database:
         with self.connect() as db:
             return [dict(row) for row in db.execute(
                 "SELECT user_id,max_trade_try,daily_loss_limit_try,max_recovery_loss_try,"
-                "btcturk_budget_try,binance_tr_budget_try "
+                "btcturk_budget_try,binance_tr_budget_try,paper_backend,fee_mode,"
+                "btcturk_maker_fee_rate,btcturk_taker_fee_rate,binance_tr_maker_fee_rate,"
+                "binance_tr_taker_fee_rate,fee_source,fees_verified_at,paper_initial_try_multiplier "
                 "FROM user_settings WHERE mode='test' AND active=1 ORDER BY user_id"
             )]
+
+    def settings_for_user(self, user_id: int) -> dict | None:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM user_settings WHERE user_id=?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+    def execution_exists(self, intent_id: str) -> bool:
+        with self.connect() as db:
+            return db.execute("SELECT 1 FROM execution_intents WHERE id=?", (intent_id,)).fetchone() is not None
+
+    def record_external_paper_execution(self, values: dict, legs: list[dict]) -> bool:
+        """Journal a completed intent emitted by the native Hummingbot paper engine.
+
+        The event bridge may replay a JSONL file after a dashboard restart. The
+        primary-key check makes that replay idempotent and keeps the database as
+        the single source of truth for the UI.
+        """
+        if self.execution_exists(values["id"]):
+            return False
+        values = {**values, "mode": "paper", "state": values.get("state", "BALANCED_FILL")}
+        self.create_execution_intent(values, [])
+        for leg in legs:
+            self.add_execution_leg(values["id"], leg)
+        self.update_execution_state(values["id"], values["state"], values.get("detail", "{}"),
+                                    values.get("realized_profit_try"), values.get("error"))
+        return True
 
     def has_recent_execution(self, user_id: int, pair: str, since_ms: int) -> bool:
         with self.connect() as db:

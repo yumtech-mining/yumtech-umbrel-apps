@@ -29,8 +29,18 @@ class OrderBookStore:
     def _side(levels: Iterable, deleted: bool = False) -> dict[Decimal, Decimal]:
         result = {}
         for level in levels:
-            price = Decimal(str(level.get("P") if isinstance(level, dict) else level[0]))
-            amount = Decimal("0") if deleted else Decimal(str(level.get("A") if isinstance(level, dict) else level[1]))
+            if isinstance(level, dict):
+                raw_price, raw_amount = level.get("P"), level.get("A")
+            elif hasattr(level, "price") and hasattr(level, "amount"):
+                # REST adapters return domain ``Level`` objects, while the
+                # websocket handlers use exchange-native tuples/dicts. Keep
+                # both representations in the bounded cache so a REST
+                # fallback is immediately available to PaperTrade too.
+                raw_price, raw_amount = level.price, level.amount
+            else:
+                raw_price, raw_amount = level[0], level[1]
+            price = Decimal(str(raw_price))
+            amount = Decimal("0") if deleted else Decimal(str(raw_amount))
             if isinstance(level, dict) and int(level.get("CP", 0)) == 3:
                 amount = Decimal("0")
             if amount > 0:

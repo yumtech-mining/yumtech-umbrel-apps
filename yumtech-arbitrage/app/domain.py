@@ -35,6 +35,10 @@ class Opportunity:
     net_profit_try: Decimal
     net_profit_pct: Decimal
     executable: bool
+    # Rates used by the calculation are kept with the snapshot so the
+    # dashboard can explain exactly which fee tier produced the opportunity.
+    buy_fee_rate: Decimal = ZERO
+    sell_fee_rate: Decimal = ZERO
 
 
 def buy_for_quote(asks: Iterable[Level], quote_budget: Decimal) -> FillEstimate:
@@ -90,7 +94,8 @@ def calculate_opportunity(
     pct = net / buy_cost if buy_cost else ZERO
     executable = buy.complete and sell.complete and amount > ZERO and pct >= min_profit_rate
     return Opportunity(pair, buy_exchange, sell_exchange, amount, buy.vwap, sell.vwap,
-                       sell_value - buy_cost, fees, buffer, net, pct, executable)
+                       sell_value - buy_cost, fees, buffer, net, pct, executable,
+                       buy_fee_rate, sell_fee_rate)
 
 
 class ExecutionState(StrEnum):

@@ -5,7 +5,9 @@ import pytest
 from app.db import Database
 from app.domain import ExecutionState, Opportunity
 from app.coordinator import PaperCoordinator, apply_quote_budgets
-from app.execution import ArbitrageExecutionEngine, PaperAdapter, RecoveryLimitExceeded
+from app.execution import (ArbitrageExecutionEngine, HummingbotPaperAdapter,
+                           LegRequest, PaperAdapter, RecoveryLimitExceeded, Side)
+from app.market_stream import OrderBookStore
 from app.security import passwords
 
 
@@ -48,6 +50,33 @@ async def test_balanced_paper_execution_is_journaled(tmp_path):
     saved = db.list_executions(1)[0]
     assert saved["state"] == "BALANCED_FILL"
     assert len(saved["legs"]) == 2
+
+
+@pytest.mark.anyio
+async def test_hummingbot_paper_adapter_walks_depth_applies_fee_and_updates_wallet():
+    books = OrderBookStore()
+    books.replace("btcturk", "BTC", [(100, 0.01), (101, 0.02)], [(99, 1)])
+    adapter = HummingbotPaperAdapter("BTCTürk", books, execution_delay_seconds=0,
+                                    initial_try=Decimal("1000"))
+    fill = await adapter.submit_limit(LegRequest("BTCTürk", Side.BUY, "BTC/TRY",
+                                                  Decimal("0.02"), Decimal("101")))
+    assert fill.status == "FILLED"
+    assert fill.filled_base == Decimal("0.02")
+    assert fill.average_price == Decimal("100.5")
+    assert fill.fee_rate == Decimal("0.0015")
+    assert fill.fee_try == Decimal("0.003015")
+    assert adapter.balances()["TRY"] == Decimal("1000") - Decimal("2.01") * Decimal("1.0015")
+    assert adapter.balances()["BTC"] == Decimal("0.02")
+
+
+@pytest.mark.anyio
+async def test_hummingbot_paper_adapter_rejects_missing_or_stale_depth():
+    books = OrderBookStore()
+    adapter = HummingbotPaperAdapter("Binance TR", books, execution_delay_seconds=0)
+    fill = await adapter.submit_limit(LegRequest("Binance TR", Side.BUY, "ETH/TRY",
+                                                  Decimal("1"), Decimal("100")))
+    assert fill.status == "NO_LIQUIDITY"
+    assert fill.filled_base == Decimal("0")
 
 
 @pytest.mark.anyio

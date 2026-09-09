@@ -1,10 +1,11 @@
 import asyncio
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Callable, Iterable, Protocol
 
 from .db import Database
 from .domain import ExecutionState, Opportunity, transition
@@ -34,6 +35,11 @@ class LegFill:
     fee_try: Decimal
     order_id: str
     status: str
+    fee_rate: Decimal = Decimal("0")
+    fee_asset: str = "TRY"
+    fill_source: str = "paper"
+    slippage_try: Decimal = Decimal("0")
+    latency_ms: int = 0
 
     @property
     def quote_value(self) -> Decimal:
@@ -57,7 +63,7 @@ class ExecutionAdapter(Protocol):
 
 
 class PaperAdapter:
-    """Deterministic adapter used for tests and the default dashboard mode."""
+    """Deterministic adapter reserved for unit tests and bootstrap fixtures."""
 
     def __init__(self, name: str, fee_rate: Decimal = Decimal("0.0015"),
                  fill_ratio: Decimal = Decimal("1"), recovery_slippage: Decimal = Decimal("0.001")):
@@ -67,17 +73,173 @@ class PaperAdapter:
         self.recovery_slippage = recovery_slippage
 
     async def submit_limit(self, request: LegRequest) -> LegFill:
+        started = time.monotonic()
         filled = request.base_amount * self.fill_ratio
         fee = filled * request.limit_price * self.fee_rate
         return LegFill(self.name, request.side, request.base_amount, filled, request.limit_price,
-                       fee, f"paper-{uuid.uuid4().hex[:12]}", "FILLED" if filled == request.base_amount else "PARTIAL")
+                       fee, f"paper-{uuid.uuid4().hex[:12]}", "FILLED" if filled == request.base_amount else "PARTIAL",
+                       self.fee_rate, "TRY", "deterministic-paper", Decimal("0"),
+                       int((time.monotonic() - started) * 1000))
 
     async def recover_market(self, request: LegRequest) -> LegFill:
         factor = Decimal("1") - self.recovery_slippage if request.side is Side.SELL else Decimal("1") + self.recovery_slippage
         price = request.limit_price * factor
         fee = request.base_amount * price * self.fee_rate
         return LegFill(self.name, request.side, request.base_amount, request.base_amount, price,
-                       fee, f"paper-recovery-{uuid.uuid4().hex[:10]}", "FILLED")
+                       fee, f"paper-recovery-{uuid.uuid4().hex[:10]}", "FILLED", self.fee_rate,
+                       "TRY", "deterministic-paper-recovery", abs(price - request.limit_price) * request.base_amount, 0)
+
+
+class HummingbotPaperAdapter:
+    """Order-book backed adapter with Hummingbot PaperTrade semantics.
+
+    Hummingbot's paper connector waits five seconds before a market order is
+    matched and walks the live order book rather than filling at a ticker price.
+    The dashboard uses the same rules for its local journal: depth can run out,
+    fills can be partial, fees are applied to the quote value, and a synthetic
+    paper wallet is debited/credited for every fill. No API key or order route
+    is available from this adapter.
+    """
+
+    def __init__(self, name: str, books, fee_provider: Callable[[], Decimal] | None = None,
+                 *, execution_delay_seconds: float = 5.0, max_book_age_ms: int = 10_000,
+                 initial_try: Decimal = Decimal("10_000"), initial_base_multiplier: Decimal = Decimal("10")):
+        self.name = name
+        self.books = books
+        self.fee_provider = fee_provider or (lambda: Decimal("0.0015"))
+        self.execution_delay_seconds = max(float(execution_delay_seconds), 0.0)
+        self.max_book_age_ms = max(int(max_book_age_ms), 500)
+        self.initial_try = max(Decimal(str(initial_try)), Decimal("0"))
+        self.initial_base_multiplier = max(Decimal(str(initial_base_multiplier)), Decimal("1"))
+        self.recovery_slippage = Decimal("0.001")
+        self._balances: dict[str, Decimal] = {"TRY": self.initial_try}
+        self._seeded_assets: set[str] = {"TRY"}
+        self._lock = asyncio.Lock()
+
+    def configure_profile(self, profile: dict) -> None:
+        """Refresh fee and virtual-wallet parameters from the active profile."""
+        try:
+            multiplier = Decimal(str(profile.get("paper_initial_try_multiplier", "10")))
+            if Decimal("1") <= multiplier <= Decimal("100"):
+                self.initial_try = max(Decimal(str(profile.get(
+                    "btcturk_budget_try" if self.name == "BTCTürk" else "binance_tr_budget_try", "1000"))) * multiplier,
+                                       Decimal("0"))
+                self.initial_base_multiplier = multiplier
+                self._balances["TRY"] = max(self._balances.get("TRY", Decimal("0")), self.initial_try)
+                self._seeded_assets.add("TRY")
+        except (ArithmeticError, TypeError, ValueError):
+            pass
+
+    @property
+    def fee_rate(self) -> Decimal:
+        try:
+            value = Decimal(str(self.fee_provider()))
+            return value if Decimal("0") <= value <= Decimal("0.10") else Decimal("0.0015")
+        except (ArithmeticError, TypeError, ValueError):
+            return Decimal("0.0015")
+
+    @property
+    def exchange_key(self) -> str:
+        return "btcturk" if self.name == "BTCTürk" else "binance_tr"
+
+    def _base_asset(self, pair: str) -> str:
+        return pair.split("/", 1)[0].split("-", 1)[0].upper()
+
+    def _ensure_seed(self, asset: str, amount: Decimal) -> None:
+        if asset in self._seeded_assets:
+            return
+        if asset == "TRY":
+            seed = self.initial_try
+        else:
+            seed = max(amount * self.initial_base_multiplier, Decimal("0"))
+        self._balances[asset] = max(self._balances.get(asset, Decimal("0")), seed)
+        self._seeded_assets.add(asset)
+
+    def balances(self) -> dict[str, Decimal]:
+        return dict(self._balances)
+
+    def _book(self, pair: str):
+        return self.books.get(self.exchange_key, self._base_asset(pair), max_age_ms=self.max_book_age_ms)
+
+    @staticmethod
+    def _walk(levels: Iterable, amount: Decimal, side: Side, limit_price: Decimal | None = None):
+        remaining = max(amount, Decimal("0"))
+        filled = Decimal("0")
+        quote = Decimal("0")
+        best = None
+        for level in levels:
+            price = Decimal(str(level.price))
+            available = Decimal(str(level.amount))
+            if price <= 0 or available <= 0:
+                continue
+            if best is None:
+                best = price
+            if limit_price and ((side is Side.BUY and price > limit_price) or
+                                (side is Side.SELL and price < limit_price)):
+                break
+            take = min(available, remaining)
+            filled += take
+            quote += take * price
+            remaining -= take
+            if remaining <= Decimal("0.00000000000001"):
+                break
+        average = quote / filled if filled else Decimal("0")
+        return filled, quote, average, best or Decimal("0")
+
+    async def submit_limit(self, request: LegRequest) -> LegFill:
+        # The dashboard's limit request is an IOC-style, immediately crossing
+        # quote. Waiting here mirrors PaperTradeExchange.TRADE_EXECUTION_DELAY.
+        return await self._execute(request, limit_price=request.limit_price, recovery=False)
+
+    async def recover_market(self, request: LegRequest) -> LegFill:
+        return await self._execute(request, limit_price=None, recovery=True)
+
+    async def _execute(self, request: LegRequest, *, limit_price: Decimal | None,
+                       recovery: bool) -> LegFill:
+        started = time.monotonic()
+        if self.execution_delay_seconds:
+            await asyncio.sleep(self.execution_delay_seconds)
+        async with self._lock:
+            base_asset = self._base_asset(request.pair)
+            self._ensure_seed("TRY", request.base_amount * max(request.limit_price, Decimal("1")))
+            if request.side is Side.SELL:
+                self._ensure_seed(base_asset, request.base_amount)
+            book = self._book(request.pair)
+            levels = (book[0] if request.side is Side.BUY else book[1]) if book else []
+            filled, quote, average, best = self._walk(levels, request.base_amount, request.side, limit_price)
+            rate = self.fee_rate
+
+            # Respect the synthetic wallet. A shortage is represented as a
+            # partial fill instead of silently minting funds.
+            if request.side is Side.BUY and filled:
+                available_try = self._balances.get("TRY", Decimal("0"))
+                affordable = available_try / (average * (Decimal("1") + rate)) if average else Decimal("0")
+                if affordable < filled:
+                    filled, quote, average, _ = self._walk(levels, affordable, request.side, limit_price)
+            elif request.side is Side.SELL and filled:
+                available_base = self._balances.get(base_asset, Decimal("0"))
+                if available_base < filled:
+                    filled, quote, average, _ = self._walk(levels, available_base, request.side, limit_price)
+
+            fee = quote * rate
+            if filled:
+                if request.side is Side.BUY:
+                    self._balances["TRY"] = self._balances.get("TRY", Decimal("0")) - quote - fee
+                    self._balances[base_asset] = self._balances.get(base_asset, Decimal("0")) + filled
+                else:
+                    self._balances[base_asset] = self._balances.get(base_asset, Decimal("0")) - filled
+                    self._balances["TRY"] = self._balances.get("TRY", Decimal("0")) + quote - fee
+
+            slippage = Decimal("0")
+            if filled and best:
+                slippage = (average - best) * filled if request.side is Side.BUY else (best - average) * filled
+            status = "FILLED" if filled == request.base_amount else ("PARTIAL" if filled > 0 else "NO_LIQUIDITY")
+            source = "hummingbot-paper-recovery" if recovery else "hummingbot-paper"
+            return LegFill(
+                self.name, request.side, request.base_amount, filled, average, fee,
+                f"hb-paper-{uuid.uuid4().hex[:12]}", status, rate, "TRY", source,
+                max(slippage, Decimal("0")), int((time.monotonic() - started) * 1000),
+            )
 
 
 class ArbitrageExecutionEngine:
@@ -86,10 +248,19 @@ class ArbitrageExecutionEngine:
         self.adapters = adapters
         self._lock = asyncio.Lock()
 
+    def configure_profile(self, profile: dict) -> None:
+        for adapter in self.adapters.values():
+            configure = getattr(adapter, "configure_profile", None)
+            if configure:
+                configure(profile)
+
     @staticmethod
     def _leg_dict(leg: LegFill) -> dict:
         return {"filled_base": str(leg.filled_base), "average_price": str(leg.average_price),
-                "fee_try": str(leg.fee_try), "external_order_id": leg.order_id, "status": leg.status}
+                "fee_try": str(leg.fee_try), "external_order_id": leg.order_id, "status": leg.status,
+                "fee_rate": str(leg.fee_rate), "fee_asset": leg.fee_asset,
+                "fill_source": leg.fill_source, "slippage_try": str(leg.slippage_try),
+                "latency_ms": leg.latency_ms}
 
     async def execute_paper(self, user_id: int, opportunity: Opportunity,
                             max_recovery_loss_try: Decimal) -> ExecutionResult:
@@ -200,6 +371,7 @@ def reference_price(opportunity: Opportunity, side: Side) -> Decimal:
 
 def opportunity_from_mapping(item: dict) -> Opportunity:
     decimal_fields = {"base_amount", "buy_vwap", "sell_vwap", "gross_profit_try", "fees_try",
-                      "safety_buffer_try", "net_profit_try", "net_profit_pct"}
+                      "safety_buffer_try", "net_profit_try", "net_profit_pct", "buy_fee_rate",
+                      "sell_fee_rate"}
     return Opportunity(**{key: Decimal(value) if key in decimal_fields else value
                           for key, value in item.items()})

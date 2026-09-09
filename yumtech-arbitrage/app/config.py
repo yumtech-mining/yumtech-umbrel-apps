@@ -29,5 +29,13 @@ class Settings(BaseSettings):
     def hummingbot_control_path(self) -> Path:
         return self.data_dir / "hummingbot-control.json"
 
+    @property
+    def hummingbot_paper_config_path(self) -> Path:
+        return self.data_dir / "hummingbot-paper-config.json"
+
+    @property
+    def hummingbot_paper_events_path(self) -> Path:
+        return self.data_dir / "hummingbot-paper-events.jsonl"
+
 
 settings = Settings()

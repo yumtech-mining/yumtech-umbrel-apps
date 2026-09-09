@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from app.domain import Level
 from app.market_stream import OrderBookStore
 
 
@@ -17,6 +18,14 @@ def test_store_replaces_sorts_and_applies_absolute_deltas():
     assert [level.price for level in asks] == [Decimal("102"), Decimal("103")]
     assert bids[0].amount == Decimal("6")
     assert not store.apply("binance_tr", "BTC", [], [], 11)
+
+
+def test_store_accepts_rest_level_objects_for_paper_fallback():
+    store = OrderBookStore()
+    store.replace("btcturk", "BTC", [Level(100, 2)], [Level(99, 3)], 1)
+    asks, bids = store.get("btcturk", "BTC")
+    assert asks[0].price == Decimal("100")
+    assert bids[0].amount == Decimal("3")
 
 
 def test_btcturk_delete_event_zeroes_levels_and_health_is_reported():
