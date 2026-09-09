@@ -1,6 +1,6 @@
 [project]
 name = "yumtech-arbitrage"
-version = "0.4.1"
+version = "0.4.2"
 description = "Local-first BTCTurk / Binance TR arbitrage control plane"
 requires-python = ">=3.11"
 dependencies = [

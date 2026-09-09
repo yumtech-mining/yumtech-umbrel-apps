@@ -54,8 +54,17 @@ def _read_paper_config(path: Path) -> dict:
         value = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(value, dict) or value.get("version") != PAPER_CONFIG_VERSION:
             return {}
-        value["trading_pairs"] = sorted({str(p).upper().replace("/", "-")
-                                          for p in value.get("trading_pairs", []) if p})
+        pairs = set()
+        for pair in value.get("trading_pairs", []):
+            raw = str(pair).strip().upper().replace("/", "-").replace("_", "-")
+            if not raw:
+                continue
+            if "-" not in raw:
+                raw = f"{raw}-TRY"
+            base, quote = raw.split("-", 1)
+            if base and quote == "TRY":
+                pairs.add(f"{base}-TRY")
+        value["trading_pairs"] = sorted(pairs)
         return value
     except (OSError, ValueError, TypeError):
         return {}

@@ -3,7 +3,7 @@
 BTCTürk ve Binance TR arasında ortak aktif TRY paritelerini izleyen, Hummingbot
 tabanlı ve Umbrel için paketlenen yerel arbitraj uygulaması.
 
-## v0.4.0 gerçekçi PaperTrade önizlemesi
+## v0.4.2 gerçekçi PaperTrade önizlemesi
 
 Bü sürüm Umbrel paketi, sayfa tabanlı ve mobil dashboard, bütün ortak TRY pariteleri için public
 derinlik taraması, WebSocket öncelikli piyasa verisi, Decimal tabanlı net kâr
@@ -35,7 +35,7 @@ aktarılır. Canlı emir yolu hâlâ kapalıdır.
 
 ## Umbrel'e kurulum
 
-Dal ana dala alınıp `0.4.0` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
+Dal ana dala alınıp `0.4.2` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
 Community App Store kaynağı olarak şu adres eklenir:
 
 ```text
