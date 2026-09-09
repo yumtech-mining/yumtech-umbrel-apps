@@ -1,6 +1,7 @@
-# YUMTECH Arbitrage v0.2 — Hummingbot Tabanlı Tasarım
+# YUMTECH Arbitrage v0.3 — Hummingbot Tabanlı Tasarım
 
-Durum: Tasarım ve bağlayıcı geliştirme aşaması. Canlı işlem kapalıdır.
+Durum: ARM64 motor hostu ve bağlayıcılar paketlendi. Motor hazır/boşta host
+olarak çalışır; canlı işlem kapalıdır.
 
 ## 1. Temel karar
 
@@ -184,12 +185,15 @@ motor güvenli şekilde durur ve kullanıcı oturumundan tekrar başlatılır.
 
 Servisler yalnızca yerel ağda yayınlanır:
 
-- `yumtech-hummingbot`: işlem motoru ve özel bağlayıcılar;
+- `yumtech-hummingbot`: upstream v2.16.0 motoru ve özel bağlayıcılar; bu sürümde
+  telemetrisi kapalı, test modunda boşta bir host olarak başlar;
 - `yumtech-dashboard`: FastAPI ve statik arayüz;
 - kalıcı birim: Hummingbot yapılandırmaları, loglar ve SQLite verileri.
 
 Dashboard portu `8098` olarak korunur. Hummingbot kontrol arabirimi internete
-açılmaz. Tailscale erişimi kullanılacaksa yalnızca dashboard'a izin verilir.
+açılmaz. Dashboard, servisle paylaşılan sırrı olmayan durum işaretinden yalnızca
+motor sürümünü, modunu ve hazır/kapalı bilgisini okur. Tailscale erişimi
+kullanılacaksa yalnızca dashboard'a izin verilir.
 
 ## 10. Kabul kapıları
 

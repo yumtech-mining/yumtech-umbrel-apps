@@ -59,7 +59,7 @@ async function renderQualification(){
 }
 
 async function refresh(){
-  try{const [me,opportunities]=await Promise.all([api("/api/me"),api("/api/opportunities")]);renderAccount(me);renderOpportunities(opportunities);await renderQualification()}
+  try{const [me,opportunities,health]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health")]);renderAccount(me);renderOpportunities(opportunities);const hb=health.hummingbot||{};$("#hummingbot-health").textContent=hb.state==="idle"?"Hazır · test":hb.state==="not-installed"?"Kurulmadı":hb.state;await renderQualification()}
   catch(error){if(/Oturum/.test(error.message))await openAuth();else $("#scanner-age").textContent=error.message}
 }
 

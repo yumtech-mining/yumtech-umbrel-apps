@@ -3,13 +3,13 @@
 BTCTürk ve Binance TR arasında ortak aktif TRY paritelerini izleyen, Hummingbot
 tabanlı ve Umbrel için paketlenen yerel arbitraj uygulaması.
 
-## v0.2 mühendislik önizlemesi
+## v0.3 mühendislik önizlemesi
 
 Bu sürüm Umbrel paketi, mobil dashboard, bütün ortak TRY pariteleri için public
-derinlik taraması, Decimal tabanlı net kâr hesabı, çok kullanıcılı oturumlar ve
-AES-256-GCM şifreli yerel API anahtar kasası içerir. Test modu çalışır; gerçek
-emir gönderen Hummingbot bağlayıcıları güvenlik kabul testleri geçene kadar
-bilinçli olarak dağıtıma alınmamıştır.
+derinlik taraması, WebSocket öncelikli piyasa verisi, Decimal tabanlı net kâr
+hesabı, çok kullanıcılı oturumlar ve AES-256-GCM şifreli yerel API anahtar kasası
+içerir. Resmî ARM64 `hummingbot/hummingbot:v2.16.0` motoru ayrı bir servis olarak
+hazır tutulur; bu sürümde motor boşta ve test modundadır.
 
 ## Ürün kuralları
 
@@ -23,7 +23,7 @@ bilinçli olarak dağıtıma alınmamıştır.
 
 ## Umbrel'e kurulum
 
-Dal ana dala alınıp `0.2.1` çok-mimarili imajı oluşturulduktan sonra Umbrel'de
+Dal ana dala alınıp `0.3.0` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
 Community App Store kaynağı olarak şu adres eklenir:
 
 ```text
@@ -54,8 +54,11 @@ docker run --rm -p 8098:8098 -v yumtech-arbitrage-data:/data yumtech-arbitrage:d
 
 Dashboard hiçbir borsa emri göndermez. `/api/live/enable` v0.2'de sunucu
 tarafında `423 Locked` döndürür; HTML/JavaScript değiştirilerek aşılamaz.
-Canlı yürütme ancak iki Hummingbot bağlayıcısı, IOC emir ve tek-bacak kurtarma
-testleri tamamlanan sonraki sürümde açılacaktır.
+Hummingbot servisi `v2.16.0` ile aynı upstream motoru kullanır ve telemetri/hata
+raporlaması kapalıdır. Servis varsayılan olarak boşta bir hosttur; dashboard veya
+ortam değişkeni bu sürümde canlı strateji başlatamaz. Canlı yürütme ancak
+BTCTürk market BUY için TRY dönüşümü, IOC emir ve tek-bacak kurtarma testleri
+tamamlandıktan sonra ayrı bir sürümde açılacaktır.
 
 ## Kaynak tabanları
 

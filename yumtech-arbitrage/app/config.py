@@ -21,5 +21,9 @@ class Settings(BaseSettings):
     def master_key_path(self) -> Path:
         return self.data_dir / "secrets" / "master.key"
 
+    @property
+    def hummingbot_status_path(self) -> Path:
+        return self.data_dir / "hummingbot-status.json"
+
 
 settings = Settings()

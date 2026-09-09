@@ -19,6 +19,7 @@ from .domain import LiveQualification
 from .execution import (ArbitrageExecutionEngine, PaperAdapter,
                         RecoveryLimitExceeded, opportunity_from_mapping)
 from .exchanges import BTCTurkPublic
+from .hummingbot_status import read_status
 from .scanner import MarketScanner
 from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create_master_key, new_session_token, passwords
 
@@ -120,7 +121,13 @@ def health():
             "market_snapshot_id": scanner.snapshot_id,
             "paper_coordinator": bool(paper_coordinator and paper_coordinator.running),
             "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None,
-            "market_data": scanner.market_data_health()}
+            "market_data": scanner.market_data_health(),
+            "hummingbot": read_status(settings.hummingbot_status_path)}
+
+
+@app.get("/api/hummingbot/status")
+def hummingbot_status(user: dict = Depends(current_user)):
+    return read_status(settings.hummingbot_status_path)
 
 
 @app.get("/api/bootstrap")
