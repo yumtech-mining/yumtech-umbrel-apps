@@ -114,6 +114,18 @@ function renderHummingbotStatus(hb){
   });
 }
 
+function renderAudit(payload){
+  const list=$("#audit-list");list.textContent="";
+  const items=payload.items||[];
+  if(!items.length){list.innerHTML="<small>Henüz denetim kaydı yok</small>";return}
+  items.slice(0,10).forEach(item=>{
+    const row=document.createElement("div");row.className="audit-row";
+    const when=item.created_at?new Date(Number(item.created_at)*1000).toLocaleString("tr-TR"):"—";
+    row.innerHTML=`<span>${escapeHtml(when)}</span><b>${escapeHtml(item.event||"olay")}</b>`;
+    list.appendChild(row);
+  });
+}
+
 async function renderQualification(){
   const result=await api("/api/live/qualification");const list=$("#qualification-list");list.textContent="";
   const failures=result.failures||[],gateCount=8;$(".score").textContent=result.eligible?`${gateCount}/${gateCount}`:`${Math.max(0,gateCount-failures.length)}/${gateCount}`;
@@ -123,7 +135,7 @@ async function renderQualification(){
 }
 
 async function refresh(){
-  try{const [me,opportunities,health,summary,history,wallets]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health"),api("/api/metrics/summary"),api("/api/executions?limit=20"),api("/api/balances")]);renderAccount(me);renderOpportunities(opportunities);renderHummingbotStatus(health.hummingbot||{});renderSummary(summary);renderTrades(history);renderBalances(wallets);await renderQualification()}
+  try{const [me,opportunities,health,summary,history,wallets,audit]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health"),api("/api/metrics/summary"),api("/api/executions?limit=20"),api("/api/balances"),api("/api/audit?limit=12")]);renderAccount(me);renderOpportunities(opportunities);renderHummingbotStatus(health.hummingbot||{});renderSummary(summary);renderTrades(history);renderBalances(wallets);renderAudit(audit);await renderQualification()}
   catch(error){if(/Oturum/.test(error.message))await openAuth();else $("#scanner-age").textContent=error.message}
 }
 

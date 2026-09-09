@@ -136,6 +136,8 @@ async def _fetch_authenticated_balances(user_id: int, exchange: str) -> dict:
                            "WHERE user_id=? AND exchange=?", (user_id, exchange)).fetchone()
     if not row:
         return {"exchange": exchange, "state": "not-configured", "balances": []}
+    if not row["validated_at"]:
+        return {"exchange": exchange, "state": "unvalidated", "balances": []}
     try:
         api_key = decrypt_secret(master_key, user_id, exchange, row["api_key_enc"])
         secret = decrypt_secret(master_key, user_id, exchange, row["secret_enc"])
@@ -419,6 +421,11 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
 @app.get("/api/executions")
 def executions(limit: int = 100, user: dict = Depends(current_user)):
     return {"items": db.list_executions(user["id"], limit)}
+
+
+@app.get("/api/audit")
+def audit_events(limit: int = 80, user: dict = Depends(current_user)):
+    return {"items": db.list_audit(user["id"], limit)}
 
 
 @app.get("/api/metrics/summary")

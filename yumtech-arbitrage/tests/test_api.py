@@ -45,3 +45,6 @@ def test_owner_session_csrf_and_separate_user(tmp_path):
         history = client.get("/api/executions")
         assert history.status_code == 200
         assert history.json()["items"][0]["id"] == paper.json()["intent_id"]
+        audit = client.get("/api/audit")
+        assert audit.status_code == 200
+        assert any(item["event"] == "hummingbot_control" for item in audit.json()["items"])

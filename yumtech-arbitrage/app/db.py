@@ -168,7 +168,7 @@ class Database:
             for intent in intents:
                 intent["legs"] = [dict(row) for row in db.execute(
                     "SELECT exchange,side,requested_base,requested_price,filled_base,average_price,"
-                    "fee_try,external_order_id,status FROM execution_legs WHERE intent_id=? ORDER BY id",
+                    "fee_try,external_order_id,status,created_at,updated_at FROM execution_legs WHERE intent_id=? ORDER BY id",
                     (intent["id"],),
                 )]
             return intents
@@ -315,3 +315,12 @@ class Database:
             "realized_loss_try": str(Decimal(str(row["realized_loss_try"] or 0)).quantize(Decimal("0.01"))),
             **windows,
         }
+
+    def list_audit(self, user_id: int, limit: int = 80) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT event,detail,created_at FROM audit_log "
+                "WHERE user_id=? OR user_id IS NULL ORDER BY id DESC LIMIT ?",
+                (user_id, min(max(int(limit), 1), 200)),
+            ).fetchall()
+        return [dict(row) for row in rows]
