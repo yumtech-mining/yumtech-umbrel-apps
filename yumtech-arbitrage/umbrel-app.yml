@@ -1,0 +1,26 @@
+manifestVersion: "1.0.0"
+id: yumtech-arbitrage
+category: finance
+name: YUMTECH Arbitrage
+version: "0.2.0"
+icon: "https://raw.githubusercontent.com/yumtech-mining/yumtech-umbrel-apps/main/yumtech-arbitrage/icon.png"
+tagline: BTCTürk ve Binance TR için yerel arbitraj kontrol merkezi
+description: >-
+  YUMTECH Arbitrage, BTCTürk ile Binance TR'deki ortak aktif TRY spot
+  paritelerini izleyen, derinlik ve komisyon sonrası net fırsatları hesaplayan
+  self-hosted bir kontrol merkezidir. Varsayılan test modu gerçek emir göndermez.
+
+  Kullanıcı hesapları ve şifreli API anahtar kasaları birbirinden ayrılır.
+  Raspberry Pi 5 4 GB hedefinde aynı anda yalnızca bir işlem profili etkin olur.
+  Canlı mod, gözlem ve güvenlik kapıları tamamlanana kadar kilitlidir.
+developer: YUMTECH
+website: https://github.com/yumtech-mining/yumtech-umbrel-apps
+repo: https://github.com/yumtech-mining/yumtech-umbrel-apps
+support: https://github.com/yumtech-mining/yumtech-umbrel-apps/issues
+port: 8098
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: yumtech-mining
+submission: https://github.com/yumtech-mining/yumtech-umbrel-apps

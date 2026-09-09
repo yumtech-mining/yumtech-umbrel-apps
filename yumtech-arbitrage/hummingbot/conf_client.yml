@@ -1,0 +1,5 @@
+# Mounted into the pinned Hummingbot engine when the live execution image is enabled.
+anonymized_metrics_mode: anonymized_metrics_disabled
+send_error_logs: false
+fetch_pairs_from_all_exchanges: false
+kill_switch_mode: kill_switch_disabled

@@ -1,0 +1,20 @@
+version: "3.7"
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: yumtech-arbitrage_dashboard_1
+      APP_PORT: 8098
+
+  dashboard:
+    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.2.0
+    restart: on-failure
+    stop_grace_period: 20s
+    environment:
+      YUMTECH_DATA_DIR: /data
+      YUMTECH_DASHBOARD_DIR: /app/dashboard
+      YUMTECH_LIVE_TRADING_ARMED: "false"
+      YUMTECH_TARGET_TRY: "1000"
+      YUMTECH_MIN_NET_PROFIT_PCT: "0.40"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

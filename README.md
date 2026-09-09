@@ -1,5 +1,9 @@
 # YUMTECH
 
+Bu depoda iki ayrı Umbrel uygulaması bulunur: `yumtech` Bitcoin solo
+madencilik altyapısıdır; `yumtech-arbitrage` ise BTCTürk / Binance TR ortak
+TRY pariteleri için test-öncelikli arbitraj kontrol merkezidir.
+
 YUMTECH; Bitcoin Core veya Bitcoin Knots ile çalışan, self-hosted solo
 madencilik altyapısıdır. Stratum V1, Stratum V2, vardiff, gerçek share
 difficulty, Best Share, Round Effort, blok takibi ve canlı dashboard sunar.
@@ -26,7 +30,7 @@ Topluluk mağazası adresi:
 https://github.com/yumtech-mining/yumtech-umbrel-apps
 ```
 
-Umbrel uygulaması `yumtech/` altında bulunur. Linux kurulumu ayrı dosyaları
+Umbrel uygulamaları `yumtech/` ve `yumtech-arbitrage/` altında bulunur. Linux kurulumu ayrı dosyaları
 kullanır; mevcut Umbrel kurulumu ve verileri etkilenmez.
 
 ## CKPool Dashboard
