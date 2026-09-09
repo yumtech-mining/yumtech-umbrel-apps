@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071416">
+  <title>YUMTECH Arbitrage</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Ana menü">
+      <a class="brand" href="#overview" aria-label="YUMTECH Arbitrage ana sayfa">
+        <span class="brand-mark">Y</span>
+        <span><small>YUMTECH</small><strong>ARBITRAGE</strong></span>
+      </a>
+      <nav>
+        <a class="nav-item active" href="#overview" data-view="overview"><span>◫</span> Genel Bakış</a>
+        <a class="nav-item" href="#markets" data-view="markets"><span>⌁</span> Fırsatlar</a>
+        <a class="nav-item" href="#trades" data-view="trades"><span>⇄</span> İşlemler</a>
+        <a class="nav-item" href="#wallets" data-view="wallets"><span>◈</span> Cüzdanlar</a>
+        <a class="nav-item" href="#accounts" data-view="accounts"><span>⌘</span> API Hesapları</a>
+        <a class="nav-item" href="#risk" data-view="risk"><span>◇</span> Risk ve Ayarlar</a>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="privacy-dot"></span>
+        <div><strong>Telemetri kapalı</strong><small>Veriler bu cihazda kalır</small></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">YUMTECH / <span id="current-user">Oturum bekleniyor</span></p>
+          <h1>Arbitraj Kontrol Merkezi</h1>
+        </div>
+        <div class="top-actions">
+          <div class="mode-control" aria-label="İşlem modu">
+            <button id="test-mode" class="mode active" type="button">TEST</button>
+            <button id="live-mode" class="mode" type="button">CANLI</button>
+          </div>
+          <button class="icon-btn" id="account-button" type="button" aria-label="Kullanıcı menüsü">ÜY</button>
+        </div>
+      </header>
+
+      <section class="notice" id="mode-notice">
+        <div><span class="pulse"></span><strong>Test modu etkin</strong></div>
+        <p>Emirler sanal bakiyelerle simüle ediliyor. Gerçek hesabınıza emir gönderilmez.</p>
+        <button type="button" id="test-details">Test ölçütleri</button>
+      </section>
+
+      <section class="metric-grid" aria-label="Özet değerler">
+        <article class="metric-card primary">
+          <span>Bugünkü net sonuç</span><strong id="today-pnl">₺0,00</strong>
+          <small><b>TEST</b> Gerçekleşen işlem yok</small>
+          <div class="spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </article>
+        <article class="metric-card">
+          <span>Uygun fırsat</span><strong id="ready-count">—</strong><small><span id="pair-count">—</span> ortak TRY paritesinde</small>
+        </article>
+        <article class="metric-card">
+          <span>Kullanılabilir TRY</span><strong>—</strong><small>API doğrulamasından sonra</small>
+        </article>
+        <article class="metric-card">
+          <span>Tarayıcı sağlığı</span><strong id="scanner-health" class="healthy">Başlıyor</strong><small id="scanner-age">Public veriler bekleniyor</small>
+        </article>
+      </section>
+
+      <div class="dashboard-grid">
+        <section class="panel opportunities" id="markets">
+          <div class="panel-head">
+            <div><p class="eyebrow">CANLI TARAMA</p><h2>En iyi fırsatlar</h2></div>
+            <div class="filters">
+              <button class="chip active" type="button">Tümü</button>
+              <button class="chip" type="button">Uygun</button>
+              <button class="chip" type="button">İzle</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Parite</th><th>Yön</th><th>Net fark</th><th>Derinlik</th><th>Tahmini net</th><th>Durum</th></tr></thead>
+              <tbody id="opportunity-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="right-rail">
+          <section class="panel guard-card">
+            <div class="panel-head compact"><div><p class="eyebrow">GÜVENLİK</p><h2>İşlem koruması</h2></div><span class="score">6/6</span></div>
+            <ul class="guard-list" id="qualification-list"><li><span>…</span><div><strong>Kontroller yükleniyor</strong><small>Canlı mod varsayılan olarak kilitli</small></div></li></ul>
+            <button class="secondary full" type="button" data-view="risk">Tüm kontrolleri aç</button>
+          </section>
+
+          <section class="panel balances-card" id="wallets">
+            <div class="panel-head compact"><div><p class="eyebrow">CÜZDANLAR</p><h2>Borsa dağılımı</h2></div><button class="text-btn" type="button">Yenile</button></div>
+            <div class="exchange-balance">
+              <div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-status">API anahtarı bekleniyor</small></div><b>—</b>
+            </div>
+            <div class="bar"><i style="width:55%"></i></div>
+            <div class="exchange-balance">
+              <div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-status">API anahtarı bekleniyor</small></div><b>—</b>
+            </div>
+            <div class="bar binance"><i style="width:45%"></i></div>
+            <button class="secondary full" type="button" data-view="accounts">API hesaplarını yönet</button>
+          </section>
+        </aside>
+
+        <section class="panel trades-panel" id="trades">
+          <div class="panel-head"><div><p class="eyebrow">KAYITLAR</p><h2>Son arbitraj işlemleri</h2></div><button class="text-btn" type="button">Tümünü gör</button></div>
+          <div class="trade-list" id="trade-list"></div>
+        </section>
+
+        <section class="panel health-panel">
+          <div class="panel-head"><div><p class="eyebrow">ALTYAPI</p><h2>Borsa bağlantıları</h2></div><span class="live-label">CANLI</span></div>
+          <div class="latency-row"><span>BTCTürk REST</span><b id="bt-health">Bekliyor</b><i></i></div>
+          <div class="latency-row"><span>Binance TR REST</span><b id="bn-health">Bekliyor</b><i></i></div>
+          <div class="latency-row"><span>Public tarama</span><b id="scan-health">Başlıyor</b><i></i></div>
+          <div class="latency-row"><span>Hummingbot emir motoru</span><b>Kilitli</b><i></i></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <nav class="mobile-nav" aria-label="Mobil menü">
+    <a class="active" href="#overview"><span>◫</span>Özet</a><a href="#markets"><span>⌁</span>Fırsat</a>
+    <a href="#trades"><span>⇄</span>İşlem</a><a href="#wallets"><span>◈</span>Cüzdan</a>
+    <button id="mobile-more" type="button"><span>•••</span>Daha</button>
+  </nav>
+
+  <dialog id="live-dialog">
+    <form method="dialog" class="dialog-card">
+      <div class="danger-icon">!</div>
+      <p class="eyebrow">CANLI MOD ONAYI</p>
+      <h2>Gerçek para ile işlem başlayacak</h2>
+      <p>Canlı mod yalnızca API testleri, 72 saatlik gözlem ve risk kontrolleri tamamlandığında açılır. Devam etmek için aşağıdaki ifadeyi yazın.</p>
+      <label>Onay ifadesi<input id="live-confirm" autocomplete="off" placeholder="CANLI İŞLEMİ AÇ"></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary">Vazgeç</button><button value="confirm" id="confirm-live" class="danger" disabled>Canlı modu aç</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="account-dialog">
+    <form method="dialog" class="dialog-card account-card">
+      <div class="panel-head"><div><p class="eyebrow">KİŞİSEL KASA</p><h2>API hesapları</h2></div><button value="cancel" class="close-btn" aria-label="Kapat">×</button></div>
+      <p>Anahtarlar cihaz içinde şifrelenir. Çekim yetkisini borsa tarafında kapatın; uygulama çekim işlemi kullanmaz.</p>
+      <div class="api-box"><div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-key-state">Bağlı değil</small></div><button type="button" class="secondary credential-edit" data-exchange="btcturk">Ekle / değiştir</button></div>
+      <div class="api-box"><div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-key-state">Bağlı değil</small></div><button type="button" class="secondary credential-edit" data-exchange="binance_tr">Ekle / değiştir</button></div>
+      <button type="button" class="secondary full" id="add-user-button">Aile kullanıcısı ekle</button>
+      <button value="cancel" class="primary-btn full">Tamam</button>
+    </form>
+  </dialog>
+
+  <dialog id="auth-dialog">
+    <form id="auth-form" class="dialog-card">
+      <p class="eyebrow">YEREL HESAP</p><h2 id="auth-title">İlk kullanıcıyı oluştur</h2>
+      <p>En az 12 karakterli bir parola kullanın. Bu hesap ve kasası yalnızca Umbrel cihazınızda tutulur.</p>
+      <label>Kullanıcı adı<input id="auth-username" required minlength="3" autocomplete="username"></label>
+      <label>Parola<input id="auth-password" type="password" required minlength="12" autocomplete="new-password"></label>
+      <p class="form-error" id="auth-error" role="alert"></p>
+      <button class="primary-btn full" type="submit">Devam et</button>
+    </form>
+  </dialog>
+
+  <dialog id="credential-dialog">
+    <form id="credential-form" class="dialog-card">
+      <p class="eyebrow">ŞİFRELİ KASA</p><h2 id="credential-title">API anahtarı</h2>
+      <p>Çekim yetkisini borsa ayarlarından kapatın. Anahtarı sohbete veya GitHub'a yazmayın.</p>
+      <label>API key<input id="api-key" required autocomplete="off"></label>
+      <label>Private / secret key<input id="api-secret" type="password" required autocomplete="new-password"></label>
+      <p class="form-error" id="credential-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary" type="button" id="credential-cancel">Vazgeç</button><button class="primary-btn" type="submit">Şifreleyip kaydet</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="user-dialog">
+    <form id="user-form" class="dialog-card">
+      <p class="eyebrow">AYRI PROFİL</p><h2>Yeni kullanıcı ekle</h2>
+      <p>Yeni kullanıcının anahtarları, ayarları ve işlem kayıtları ayrı tutulur. Pi 5 4 GB'de aynı anda tek profil çalışır.</p>
+      <label>Kullanıcı adı<input id="new-username" required minlength="3" autocomplete="off"></label>
+      <label>Geçici parola<input id="new-password" type="password" required minlength="12" autocomplete="new-password"></label>
+      <p class="form-error" id="user-error" role="alert"></p>
+      <div class="dialog-actions"><button class="secondary" type="button" id="user-cancel">Vazgeç</button><button class="primary-btn" type="submit">Kullanıcıyı oluştur</button></div>
+    </form>
+  </dialog>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
