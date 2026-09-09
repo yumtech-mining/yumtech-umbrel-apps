@@ -1,6 +1,10 @@
 name: Build YUMTECH Arbitrage image
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-yumtech-arbitrage.yml"
+      - "yumtech-arbitrage/**"
   push:
     branches: [main]
     paths:
