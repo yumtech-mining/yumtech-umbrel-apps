@@ -3,27 +3,34 @@
 BTCTürk ve Binance TR arasında ortak aktif TRY paritelerini izleyen, Hummingbot
 tabanlı ve Umbrel için paketlenen yerel arbitraj uygulaması.
 
-## v0.2 mühendislik önizlemesi
+## v0.3.2 mühendislik önizlemesi
 
-Bu sürüm Umbrel paketi, mobil dashboard, bütün ortak TRY pariteleri için public
-derinlik taraması, Decimal tabanlı net kâr hesabı, çok kullanıcılı oturumlar ve
-AES-256-GCM şifreli yerel API anahtar kasası içerir. Test modu çalışır; gerçek
-emir gönderen Hummingbot bağlayıcıları güvenlik kabul testleri geçene kadar
-bilinçli olarak dağıtıma alınmamıştır.
+Bü sürüm Umbrel paketi, sayfa tabanlı ve mobil dashboard, bütün ortak TRY pariteleri için public
+derinlik taraması, WebSocket öncelikli piyasa verisi, Decimal tabanlı net kâr
+hesabı, çok kullanıcılı oturumlar ve AES-256-GCM şifreli yerel API anahtar kasası
+içerir. Resmî ARM64 `hummingbot/hummingbot:v2.16.0` motoru ayrı bir servis olarak
+telemetrisi kapalı, test kontrol supervisor'ı ile hazır tutulur; gerçek strateji
+başlatma ve canlı emir bu sürümde kapalıdır.
 
 ## Ürün kuralları
 
 - Varsayılan çalışma modu her kurulum ve yeniden başlatmada `test`tir.
 - Canlı moda geçiş, test yeterliliği ve açık kullanıcı onayı gerektirir.
 - Kullanıcıların API anahtarları birbirinden ayrılmış biçimde cihazda şifrelenir.
+- **BOT** sayfasında BTCTürk ve Binance TR anahtarları cihaza gönderilmeden şifrelenir,
+  bağlantı testi yapılır ve her profil için borsa başına TRY kotası ayarlanır.
+- Kullanıcı TRY bütçesi girer; paper motoru bunu güncel VWAP ile Hummingbot'un
+  kullandığı base miktarına çevirir. Bütçe iki bacakta da üst sınırdır.
 - Çekim yetkisine ihtiyaç yoktur; borsa tarafında bu yetki kapatılmalıdır.
 - Hummingbot anonim metrikleri ve hata raporlaması kapalıdır.
+- BTCTürk market BUY için TRY dönüşümü, bakiye/precision/minimum/maksimum
+  preflight'i olmadan emir payload'ı üretilemez.
 - API anahtarı, parola ve erişim jetonları Git deposuna yazılmaz.
 - Raspberry Pi 5 4 GB kurulumunda aynı anda tek aktif işlem profili çalışır.
 
 ## Umbrel'e kurulum
 
-Dal ana dala alınıp `0.2.1` çok-mimarili imajı oluşturulduktan sonra Umbrel'de
+Dal ana dala alınıp `0.3.2` çok-mimarili imajları oluşturulduktan sonra Umbrel'de
 Community App Store kaynağı olarak şu adres eklenir:
 
 ```text
@@ -52,10 +59,14 @@ docker run --rm -p 8098:8098 -v yumtech-arbitrage-data:/data yumtech-arbitrage:d
 
 ## Güvenlik sınırı
 
-Dashboard hiçbir borsa emri göndermez. `/api/live/enable` v0.2'de sunucu
+Dashboard hiçbir borsa emri göndermez. `/api/live/enable` sunucu
 tarafında `423 Locked` döndürür; HTML/JavaScript değiştirilerek aşılamaz.
-Canlı yürütme ancak iki Hummingbot bağlayıcısı, IOC emir ve tek-bacak kurtarma
-testleri tamamlanan sonraki sürümde açılacaktır.
+Hummingbot servisi `v2.16.0` ile aynı upstream motoru kullanır ve telemetri/hata
+raporlaması kapalıdır. Servis varsayılan olarak kontrol supervisor'ı ile test
+hostu olarak çalışır; dashboard veya ortam değişkeni bu sürümde canlı strateji
+başlatamaz. Canlı yürütme ancak
+BTCTürk market BUY için TRY dönüşümü, IOC emir ve tek-bacak kurtarma testleri
+tamamlandıktan sonra ayrı bir sürümde açılacaktır.
 
 ## Kaynak tabanları
 

@@ -31,8 +31,9 @@ class BTCTurkPublic:
             quote = str(item.get("denominator", "")).upper()
             base = str(item.get("numerator", "")).upper()
             if quote == "TRY":
+                status = str(item.get("status", "TRADING")).upper()
                 result[base] = Market(base, quote, item["name"], Decimal("1").scaleb(-int(item["numeratorScale"])),
-                                      bool(item.get("hasMarketOrder", True)))
+                                      status not in {"CLOSED", "SUSPENDED", "DISABLED"})
         return result
 
     async def order_book(self, market: Market, limit: int = 100) -> tuple[list[Level], list[Level]]:
@@ -50,17 +51,23 @@ class BTCTurkPublic:
 
 class BinanceTRPublic:
     base_url = "https://api.binance.me"
+    open_url = "https://www.binance.tr"
 
     def __init__(self, client: httpx.AsyncClient): self.client = client
 
     async def markets(self) -> dict[str, Market]:
-        response = await self.client.get(f"{self.base_url}/api/v3/exchangeInfo")
+        response = await self.client.get(f"{self.open_url}/open/v1/common/symbols")
         result = {}
-        for item in response.raise_for_status().json()["symbols"]:
+        payload = response.raise_for_status().json()
+        if int(payload.get("code", 0)) != 0:
+            raise httpx.HTTPStatusError("Binance TR symbol response failed", request=response.request, response=response)
+        for item in payload.get("data", {}).get("list", []):
             if item["quoteAsset"] != "TRY": continue
             lot = next((f for f in item["filters"] if f["filterType"] == "LOT_SIZE"), None)
             if lot:
-                result[item["baseAsset"]] = Market(item["baseAsset"], "TRY", item["symbol"], Decimal(lot["stepSize"]), item["status"] == "TRADING")
+                active = int(item.get("type", 0)) == 1 and int(item.get("spotTradingEnable", 0)) == 1
+                result[item["baseAsset"]] = Market(item["baseAsset"], "TRY", item["symbol"].replace("_", ""),
+                                                   Decimal(lot["stepSize"]), active)
         return result
 
     async def order_book(self, market: Market, limit: int = 100) -> tuple[list[Level], list[Level]]:

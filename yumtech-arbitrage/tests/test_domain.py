@@ -40,4 +40,5 @@ def test_recovery_state_machine_rejects_unsafe_shortcut():
 
 def test_live_qualification_reports_every_missing_gate():
     q = LiveQualification(False, Decimal("10"), 4, 0, False, False, False)
-    assert len(q.failures()) == 7
+    assert len(q.failures()) == 8
+    assert any("BTCTürk market alış TRY dönüşümü" in failure for failure in q.failures())
