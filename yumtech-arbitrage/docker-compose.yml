@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   hummingbot:
-    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.3.2
+    image: ghcr.io/yumtech-mining/yumtech-hummingbot:0.4.0
     restart: on-failure
     init: true
     environment:
@@ -11,6 +11,7 @@ services:
       YUMTECH_LIVE_TRADING_ENABLED: "false"
       YUMTECH_STATUS_FILE: /home/hummingbot/yumtech-data/hummingbot-status.json
       YUMTECH_CONTROL_FILE: /home/hummingbot/yumtech-data/hummingbot-control.json
+      YUMTECH_PAPER_CONFIG_FILE: /home/hummingbot/yumtech-data/hummingbot-paper-config.json
     volumes:
       - ${APP_DATA_DIR}/hummingbot/conf:/home/hummingbot/conf
       - ${APP_DATA_DIR}/hummingbot/logs:/home/hummingbot/logs
@@ -35,7 +36,7 @@ services:
       APP_PORT: 8098
 
   dashboard:
-    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.3.2
+    image: ghcr.io/yumtech-mining/yumtech-arbitrage:0.4.0
     depends_on:
       hummingbot:
         condition: service_healthy

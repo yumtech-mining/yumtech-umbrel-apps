@@ -16,11 +16,13 @@ from .config import settings
 from .coordinator import PaperCoordinator, apply_quote_budgets
 from .db import Database
 from .domain import LiveQualification
-from .execution import (ArbitrageExecutionEngine, PaperAdapter,
-                        RecoveryLimitExceeded, opportunity_from_mapping)
+from .execution import (ArbitrageExecutionEngine, HummingbotPaperAdapter,
+                        PaperAdapter, RecoveryLimitExceeded, opportunity_from_mapping)
 from .exchanges import BTCTurkPublic
 from .hummingbot_status import read_status
-from .hummingbot_control import HummingbotControlError, write_control
+from .hummingbot_control import (HummingbotControlError, read_control,
+                                  write_control, write_paper_config)
+from .hummingbot_events import HummingbotPaperEventBridge
 from .scanner import MarketScanner
 from .security import decrypt_secret, encrypt_secret, hash_token, load_or_create_master_key, new_session_token, passwords
 
@@ -32,35 +34,92 @@ scanner = MarketScanner(Decimal(settings.target_try), Decimal(settings.min_net_p
                         settings.scanner_interval_seconds)
 execution_engine: ArbitrageExecutionEngine | None = None
 paper_coordinator: PaperCoordinator | None = None
+paper_event_bridge: HummingbotPaperEventBridge | None = None
+
+
+async def _paper_config_sync_loop() -> None:
+    """Keep the native strategy config in sync with the latest pair set.
+
+    The start button may be pressed while an exchange is rate-limited and the
+    first config can therefore contain no pairs. Once the scanner has a fresh
+    intersection, update the non-secret config atomically; the runtime
+    supervisor will start a waiting PaperTrade host without another click.
+    """
+    last_signature = None
+    while True:
+        try:
+            command = read_control(settings.hummingbot_control_path)
+            if command and command.get("action") == "start_test" and scanner.common_pairs:
+                profile = db.settings_for_user(int(command["issued_by"])) or {}
+                signature = (int(command["issued_by"]), tuple(scanner.common_pairs),
+                             tuple((key, str(profile.get(key, ""))) for key in (
+                                 "btcturk_budget_try", "binance_tr_budget_try", "max_recovery_loss_try",
+                                 "fee_mode", "btcturk_maker_fee_rate", "btcturk_taker_fee_rate",
+                                 "binance_tr_maker_fee_rate", "binance_tr_taker_fee_rate",
+                                 "paper_initial_try_multiplier")))
+                if signature != last_signature:
+                    write_paper_config(
+                        settings.hummingbot_paper_config_path,
+                        user_id=int(command["issued_by"]), pairs=scanner.common_pairs,
+                        profile=profile, fee_status=scanner.fee_status(),
+                        min_profit_pct=settings.min_net_profit_pct,
+                        event_path=str(settings.hummingbot_paper_events_path),
+                    )
+                    last_signature = signature
+            else:
+                last_signature = None
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The control endpoint and the supervisor remain fail-closed; a
+            # transient read/write error should not terminate the dashboard.
+            pass
+        await asyncio.sleep(2)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global db, master_key, execution_engine, paper_coordinator
+    global db, master_key, execution_engine, paper_coordinator, paper_event_bridge
     db = Database(settings.database_path)
     halted_on_startup = db.halt_incomplete_executions()
     master_key = load_or_create_master_key(settings.master_key_path)
+    # The dashboard adapter follows Hummingbot PaperTrade's five-second
+    # execution delay and live order-book depth. The deterministic adapter is
+    # retained in tests only.
     execution_engine = ArbitrageExecutionEngine(db, {
-        "BTCTürk": PaperAdapter("BTCTürk"),
-        "Binance TR": PaperAdapter("Binance TR"),
+        "BTCTürk": HummingbotPaperAdapter("BTCTürk", scanner.books,
+                                          lambda: scanner.fee_rate("BTCTürk")),
+        "Binance TR": HummingbotPaperAdapter("Binance TR", scanner.books,
+                                             lambda: scanner.fee_rate("Binance TR")),
     })
+    active_profiles = db.active_paper_profiles()
+    if active_profiles:
+        scanner.configure_fee_profile(active_profiles[0])
+        execution_engine.configure_profile(active_profiles[0])
     paper_coordinator = PaperCoordinator(db, scanner, execution_engine)
+    paper_event_bridge = HummingbotPaperEventBridge(db, settings.hummingbot_paper_events_path,
+                                                    on_balanced=db.record_paper_trade)
     if halted_on_startup:
         db.audit(None, "startup_reconciliation", json.dumps({"halted_executions": halted_on_startup}))
     task = asyncio.create_task(scanner.run())
     coordinator_task = asyncio.create_task(paper_coordinator.run())
+    bridge_task = asyncio.create_task(paper_event_bridge.run())
+    paper_config_task = asyncio.create_task(_paper_config_sync_loop())
     yield
     paper_coordinator.stop()
+    paper_event_bridge.stop()
     scanner.stop()
     coordinator_task.cancel()
+    bridge_task.cancel()
+    paper_config_task.cancel()
     task.cancel()
     try:
-        await asyncio.gather(task, coordinator_task)
+        await asyncio.gather(task, coordinator_task, bridge_task, paper_config_task)
     except asyncio.CancelledError:
         pass
 
 
-app = FastAPI(title="YUMTECH Arbitrage", version="0.3.2-dev", lifespan=lifespan,
+app = FastAPI(title="YUMTECH Arbitrage", version="0.4.0-dev", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 
@@ -102,6 +161,17 @@ class BotSettingsUpdate(BaseModel):
     binance_tr_budget_try: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
 
 
+class FeeSettingsUpdate(BaseModel):
+    """Percentage values are entered as humans see them (0.15 = 0.15%)."""
+
+    fee_mode: str = Field(pattern=r"^(maker|taker)$")
+    btcturk_maker_pct: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+    btcturk_taker_pct: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+    binance_tr_maker_pct: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+    binance_tr_taker_pct: str = Field(pattern=r"^\d+(\.\d{1,4})?$")
+    paper_initial_try_multiplier: str = Field(pattern=r"^\d+(\.\d{1,2})?$")
+
+
 class HummingbotControlRequest(BaseModel):
     action: str = Field(pattern=r"^(start_test|stop|refresh|emergency_stop)$")
 
@@ -111,6 +181,40 @@ def _decimal_text(value) -> str:
         return format(Decimal(str(value or "0")), "f")
     except Exception:
         return "0"
+
+
+def _fee_rate_from_percent(value: str) -> Decimal:
+    rate = Decimal(value) / Decimal("100")
+    if rate < 0 or rate > Decimal("0.10"):
+        raise HTTPException(422, "Komisyon oranı %0 ile %10 arasında olmalı")
+    return rate
+
+
+def _fee_profile(row: dict | None) -> dict:
+    row = row or {}
+    def percent(key: str) -> str:
+        try:
+            return str((Decimal(str(row.get(key, "0.0015"))) * Decimal("100")).quantize(Decimal("0.0001")))
+        except (ArithmeticError, TypeError, ValueError):
+            return "0.1500"
+    return {
+        "fee_mode": str(row.get("fee_mode", "taker")),
+        "btcturk_maker_pct": percent("btcturk_maker_fee_rate"),
+        "btcturk_taker_pct": percent("btcturk_taker_fee_rate"),
+        "binance_tr_maker_pct": percent("binance_tr_maker_fee_rate"),
+        "binance_tr_taker_pct": percent("binance_tr_taker_fee_rate"),
+        "paper_initial_try_multiplier": str(row.get("paper_initial_try_multiplier", "10")),
+        "source": str(row.get("fee_source", "connector-default")),
+        "verified_at": row.get("fees_verified_at"),
+    }
+
+
+def _sync_active_paper_profile(user_id: int) -> None:
+    profile = db.settings_for_user(user_id)
+    if profile:
+        scanner.configure_fee_profile(profile)
+        if execution_engine:
+            execution_engine.configure_profile(profile)
 
 
 def _normalize_balances(exchange: str, body: dict) -> list[dict]:
@@ -220,6 +324,10 @@ def health():
             "paper_coordinator": bool(paper_coordinator and paper_coordinator.running),
             "paper_coordinator_enabled": bool(paper_coordinator and paper_coordinator.enabled),
             "last_paper_execution_id": paper_coordinator.last_execution_id if paper_coordinator else None,
+            "paper_backend": "hummingbot_paper",
+            "paper_event_bridge": bool(paper_event_bridge and paper_event_bridge.running),
+            "paper_event_bridge_error": paper_event_bridge.last_error if paper_event_bridge else None,
+            "fee_status": scanner.fee_status(),
             "market_data": scanner.market_data_health(),
             "hummingbot": read_status(settings.hummingbot_status_path)}
 
@@ -245,20 +353,54 @@ async def balances(user: dict = Depends(current_user)):
     return {"exchanges": values, "available_try_total": str(try_balance)}
 
 
+@app.get("/api/paper/balances")
+def paper_balances(user: dict = Depends(current_user)):
+    """Return the local virtual wallet used by Hummingbot-compatible paper fills."""
+
+    exchanges = []
+    for name, adapter in (execution_engine.adapters.items() if execution_engine else []):
+        values = getattr(adapter, "balances", lambda: {})()
+        exchanges.append({"exchange": name, "state": "paper", "balances": [
+            {"asset": asset, "available": str(amount), "locked": "0", "total": str(amount),
+             "synthetic": True}
+            for asset, amount in sorted(values.items()) if amount != 0
+        ]})
+    total = sum((Decimal(item["available"]) for exchange in exchanges for item in exchange["balances"]
+                 if item["asset"] == "TRY"), Decimal("0"))
+    return {"backend": "hummingbot_paper", "exchanges": exchanges, "available_try_total": str(total)}
+
+
 @app.post("/api/hummingbot/control")
 def hummingbot_control(payload: HummingbotControlRequest, user: dict = Depends(require_csrf)):
     """Send an allow-listed test-mode command over the local shared volume."""
 
     try:
+        if payload.action == "start_test":
+            profile = db.settings_for_user(user["id"]) or {}
+            write_paper_config(
+                settings.hummingbot_paper_config_path,
+                user_id=user["id"], pairs=scanner.common_pairs, profile=profile,
+                fee_status=scanner.fee_status(), min_profit_pct=settings.min_net_profit_pct,
+                event_path=str(settings.hummingbot_paper_events_path),
+            )
         command = write_control(settings.hummingbot_control_path,
                                 action=payload.action, user_id=user["id"])
     except HummingbotControlError as exc:
         raise HTTPException(422, str(exc))
     if paper_coordinator:
         if payload.action == "start_test":
-            paper_coordinator.set_enabled(True)
+            _sync_active_paper_profile(user["id"])
+            # Once the native Hummingbot PaperTrade process is requested it is
+            # the engine of record. The old coordinator remains available for
+            # manual /api/paper/execute calls but must not create duplicates.
+            paper_coordinator.set_enabled(False)
         elif payload.action in {"stop", "emergency_stop"}:
             paper_coordinator.set_enabled(False)
+        elif payload.action == "refresh" and read_status(settings.hummingbot_status_path).get("state") == "error":
+            # Safe fallback if the native process could not start (for
+            # example, an image is still being pulled). This never enables
+            # live orders; it only resumes local paper observations.
+            paper_coordinator.set_enabled(True)
     db.audit(user["id"], "hummingbot_control", json.dumps({"action": payload.action,
                                                                "command_id": command["id"]}))
     return {"command": command, "status": read_status(settings.hummingbot_status_path)}
@@ -316,7 +458,8 @@ def me(user: dict = Depends(current_user)):
     with db.connect() as conn:
         settings_row = dict(conn.execute("SELECT * FROM user_settings WHERE user_id=?", (user["id"],)).fetchone())
         keys = [dict(row) for row in conn.execute("SELECT exchange,key_hint,validated_at FROM credentials WHERE user_id=?", (user["id"],))]
-    return {"username": user["username"], "is_admin": bool(user["is_admin"]), "csrf_token": user["csrf_token"], "settings": settings_row, "credentials": keys}
+    return {"username": user["username"], "is_admin": bool(user["is_admin"]), "csrf_token": user["csrf_token"],
+            "settings": settings_row, "fees": _fee_profile(settings_row), "credentials": keys}
 
 
 @app.post("/api/users", status_code=201)
@@ -405,6 +548,7 @@ def update_test_settings(payload: TestSettingsUpdate, user: dict = Depends(requi
                      (int(payload.active), payload.max_trade_try, payload.daily_loss_limit_try,
                       payload.max_recovery_loss_try, user["id"]))
     db.audit(user["id"], "test_settings_updated", json.dumps(payload.model_dump()))
+    _sync_active_paper_profile(user["id"])
     return {"mode": "test", **payload.model_dump()}
 
 
@@ -425,7 +569,40 @@ def update_bot_settings(payload: BotSettingsUpdate, user: dict = Depends(require
             (int(payload.active), payload.btcturk_budget_try, payload.binance_tr_budget_try, user["id"]),
         )
     db.audit(user["id"], "bot_settings_updated", json.dumps(payload.model_dump()))
+    _sync_active_paper_profile(user["id"])
     return {"mode": "test", **payload.model_dump()}
+
+
+@app.get("/api/settings/fees")
+def get_fee_settings(user: dict = Depends(current_user)):
+    return _fee_profile(db.settings_for_user(user["id"]))
+
+
+@app.put("/api/settings/fees")
+def update_fee_settings(payload: FeeSettingsUpdate, user: dict = Depends(require_csrf)):
+    rates = {
+        "btcturk_maker_fee_rate": _fee_rate_from_percent(payload.btcturk_maker_pct),
+        "btcturk_taker_fee_rate": _fee_rate_from_percent(payload.btcturk_taker_pct),
+        "binance_tr_maker_fee_rate": _fee_rate_from_percent(payload.binance_tr_maker_pct),
+        "binance_tr_taker_fee_rate": _fee_rate_from_percent(payload.binance_tr_taker_pct),
+    }
+    multiplier = Decimal(payload.paper_initial_try_multiplier)
+    if multiplier < 1 or multiplier > 100:
+        raise HTTPException(422, "Sanal başlangıç bakiyesi katsayısı 1 ile 100 arasında olmalı")
+    now = int(time.time())
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE user_settings SET fee_mode=?,btcturk_maker_fee_rate=?,btcturk_taker_fee_rate=?,"
+            "binance_tr_maker_fee_rate=?,binance_tr_taker_fee_rate=?,fee_source='manual',"
+            "fees_verified_at=?,paper_initial_try_multiplier=? WHERE user_id=?",
+            (payload.fee_mode, str(rates["btcturk_maker_fee_rate"]), str(rates["btcturk_taker_fee_rate"]),
+             str(rates["binance_tr_maker_fee_rate"]), str(rates["binance_tr_taker_fee_rate"]), now,
+             str(multiplier), user["id"]),
+        )
+    _sync_active_paper_profile(user["id"])
+    result = _fee_profile(db.settings_for_user(user["id"]))
+    db.audit(user["id"], "paper_fee_settings_updated", json.dumps(result))
+    return result
 
 
 @app.post("/api/paper/execute", status_code=201)
@@ -444,18 +621,36 @@ async def execute_paper(payload: PaperExecutionRequest, user: dict = Depends(req
     budgeted = apply_quote_budgets(opportunity_from_mapping(match), profile)
     if budgeted is None:
         raise HTTPException(409, "Borsa işlem bütçesi güncel fırsat için yeterli değil")
+    if execution_engine is None:
+        raise HTTPException(503, "PaperTrade motoru henüz hazır değil")
+    # A manually injected opportunity can exist in an API test before the
+    # first public snapshot has ever arrived. Keep that isolated compatibility
+    # path deterministic so it cannot be mistaken for a market fill: once the
+    # scanner has produced a snapshot, every execution uses the order-book
+    # backed HummingbotPaperAdapter and rejects missing/stale depth.
+    runtime_engine = execution_engine
+    synthetic_bootstrap = (scanner.snapshot_id == 0 and not scanner.common_pairs
+                           and not getattr(scanner.books, "_books", {}))
+    if synthetic_bootstrap:
+        runtime_engine = ArbitrageExecutionEngine(db, {
+            "BTCTürk": PaperAdapter("BTCTürk", scanner.fee_rate("BTCTürk")),
+            "Binance TR": PaperAdapter("Binance TR", scanner.fee_rate("Binance TR")),
+        })
     try:
-        result = await execution_engine.execute_paper(
+        result = await runtime_engine.execute_paper(
             user["id"], budgeted, Decimal(profile["max_recovery_loss_try"]))
     except RecoveryLimitExceeded:
         raise HTTPException(409, "Kurtarma zarar limiti aşıldı; motor güvenli durumda durduruldu")
-    db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id, "state": result.state.value}))
+    db.audit(user["id"], "paper_execution", json.dumps({"intent_id": result.intent_id,
+                                                           "state": result.state.value,
+                                                           "fill_source": result.buy_fill.fill_source}))
     if result.state.value == "BALANCED_FILL":
         db.record_paper_trade(user["id"])
     return {"intent_id": result.intent_id, "state": result.state.value,
             "realized_profit_try": str(result.realized_profit_try), "exposure_base": str(result.exposure_base),
             "recovered": result.recovery_fill is not None,
-            "requested_quote_try": str(budgeted.base_amount * budgeted.buy_vwap)}
+            "requested_quote_try": str(budgeted.base_amount * budgeted.buy_vwap),
+            "paper_backend": "deterministic-bootstrap" if synthetic_bootstrap else "hummingbot_paper"}
 
 
 @app.get("/api/executions")
@@ -476,6 +671,8 @@ def metrics_summary(user: dict = Depends(current_user)):
         "execution": db.execution_summary(user["id"]),
         "qualification": db.qualification_metrics(user["id"]),
         "market_data": scanner.market_data_health(),
+        "fee_status": scanner.fee_status(),
+        "paper_backend": "hummingbot_paper",
         "hummingbot": read_status(settings.hummingbot_status_path),
         "last_success_ms": scanner.last_success_ms,
     }

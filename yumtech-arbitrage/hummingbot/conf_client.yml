@@ -3,3 +3,10 @@ anonymized_metrics_mode: anonymized_metrics_disabled
 send_error_logs: false
 fetch_pairs_from_all_exchanges: false
 kill_switch_mode: kill_switch_disabled
+paper_trade:
+  paper_trade_exchanges:
+    - btcturk
+    - binance_tr
+  paper_trade_account_balance:
+    TRY: 10000
+    BTC: 100

@@ -47,13 +47,14 @@ function navigate(view,{writeHash=true}={}){
 function renderOpportunityTable(selector,items,compact=false){
   const rows=$(selector);if(!rows)return;
   rows.textContent="";
-  if(!items.length){rows.innerHTML=`<tr><td colspan="${compact?5:6}" class="empty-cell">${compact?"Güncel uygun fırsat bekleniyor.":"İlk tam derinlik taraması sürüyor. Bu ekran gerçek emir göndermez."}</td></tr>`;return}
+  if(!items.length){rows.innerHTML=`<tr><td colspan="${compact?5:7}" class="empty-cell">${compact?"Güncel uygun fırsat bekleniyor.":"İlk tam derinlik taraması sürüyor. Bu ekran gerçek emir göndermez."}</td></tr>`;return}
   for(const x of items.slice(0,compact?6:50)){
     const tr=document.createElement("tr");
     const pair=String(x.pair||"—"),executable=Boolean(x.executable);
     const common=`<td><div class="pair"><span class="coin">${escapeHtml(pair.slice(0,2))}</span><b>${escapeHtml(pair)}</b></div></td><td class="direction">${escapeHtml(x.buy_exchange)} <b>→</b> ${escapeHtml(x.sell_exchange)}</td><td class="${executable?"profit":"watch"}">${percent(x.net_profit_pct)}</td>`;
+    const fees=Number(x.buy_fee_rate||0)+Number(x.sell_fee_rate||0);
     const tail=`<td class="${Number(x.net_profit_try)>=0?"profit":"loss"}">${tryMoney(x.net_profit_try)}</td><td><span class="status-pill ${executable?"":"observe"}">${executable?"PAPER UYGUN":"İZLE"}</span></td>`;
-    tr.innerHTML=compact?`${common}${tail}`:`${common}<td>${tryMoney(Number(x.base_amount)*Number(x.buy_vwap))}</td>${tail}`;
+    tr.innerHTML=compact?`${common}${tail}`:`${common}<td class="watch">${percent(fees)}</td><td>${tryMoney(Number(x.base_amount)*Number(x.buy_vwap))}</td>${tail}`;
     rows.appendChild(tr);
   }
 }
@@ -85,6 +86,25 @@ function updateBudgetPreview(){
   setText("#budget-preview-value",tryMoney(Math.min(bt||0,bn||0)));
 }
 
+function renderFeeProfile(profile={}){
+  const p=profile||{};
+  if($("#fee-mode"))$("#fee-mode").value=p.fee_mode||"taker";
+  if($("#fee-bt-maker"))$("#fee-bt-maker").value=p.btcturk_maker_pct||"0.1500";
+  if($("#fee-bt-taker"))$("#fee-bt-taker").value=p.btcturk_taker_pct||"0.1500";
+  if($("#fee-bn-maker"))$("#fee-bn-maker").value=p.binance_tr_maker_pct||"0.1500";
+  if($("#fee-bn-taker"))$("#fee-bn-taker").value=p.binance_tr_taker_pct||"0.1500";
+  if($("#paper-multiplier"))$("#paper-multiplier").value=p.paper_initial_try_multiplier||"10";
+  setText("#fee-source-badge",String(p.source||"connector-default").toUpperCase());
+  updateFeePreview();
+}
+
+function updateFeePreview(){
+  const mode=$("#fee-mode")?.value||"taker";
+  const bt=Number($(mode==="maker"?"#fee-bt-maker":"#fee-bt-taker")?.value||0);
+  const bn=Number($(mode==="maker"?"#fee-bn-maker":"#fee-bn-taker")?.value||0);
+  setText("#fee-preview-value",`%${new Intl.NumberFormat("tr-TR",{maximumFractionDigits:4}).format(bt+bn)}`);
+}
+
 function renderAccount(data){
   state.user=data;state.csrf=data.csrf_token||"";
   setText("#current-user",data.username);setText("#profile-name",data.username);setText("#profile-role",data.is_admin?"Cihaz yöneticisi":"Yerel kullanıcı");
@@ -98,12 +118,22 @@ function renderAccount(data){
   if($("#budget-btcturk"))$("#budget-btcturk").value=settings.btcturk_budget_try||"1000";
   if($("#budget-binance"))$("#budget-binance").value=settings.binance_tr_budget_try||"1000";
   updateBudgetPreview();
+  renderFeeProfile(data.fees||{});
   const keys=Object.fromEntries((data.credentials||[]).map(x=>[x.exchange,x]));
   for(const [exchange,keyId,summaryId] of [["btcturk","#bt-key-state","#account-bt-summary"],["binance_tr","#bn-key-state","#account-bn-summary"]]){
     const item=keys[exchange],status=!item?"Bağlı değil":item.validated_at?`Doğrulandı · ${item.key_hint}`:"Kaydedildi · doğrulama gerekli";
     setText(keyId,status);setText(summaryId,status);
     const form=$(`.credential-form[data-exchange="${exchange}"]`),formStatus=form?.querySelector("[data-credential-status]");
     if(formStatus){formStatus.textContent=status;formStatus.className=`form-status ${item?.validated_at?"ok":""}`}
+  }
+}
+
+function renderPaperBalances(payload){
+  const exchanges=Object.fromEntries((payload?.exchanges||[]).map(item=>[item.exchange,item]));
+  for(const [exchange,id] of [["BTCTürk","#paper-bt-assets"],["Binance TR","#paper-bn-assets"]]){
+    const target=$(id);if(!target)continue;
+    const rows=exchanges[exchange]?.balances||[];
+    target.textContent=rows.length?rows.map(row=>`${row.asset} ${numberText(row.total)}`).join(" · "):"Sanal bakiye henüz başlatılmadı";
   }
 }
 
@@ -133,7 +163,8 @@ function renderSummary(payload){
 
 function tradeMarkup(item,full){
   const time=item.created_at?new Date(Number(item.created_at)).toLocaleString("tr-TR"):"—",pnl=item.realized_profit_try==null?"Bekliyor":tryMoney(item.realized_profit_try);
-  if(full)return `<div><strong>${escapeHtml(item.pair)}</strong><small>${escapeHtml(time)}</small></div><div><strong>${escapeHtml(item.buy_exchange)} → ${escapeHtml(item.sell_exchange)}</strong><small>${escapeHtml(item.state)} · ${escapeHtml(item.mode)}</small></div><div><strong>${numberText(item.requested_base)} coin</strong><small>İstenen base miktarı</small></div><div class="amount ${Number(item.realized_profit_try||0)<0?"loss":"profit"}"><strong>${escapeHtml(pnl)}</strong><small>Gerçekleşen net</small></div>`;
+  const legs=item.legs||[],fees=legs.reduce((sum,leg)=>sum+Number(leg.fee_try||0),0),slippage=legs.reduce((sum,leg)=>sum+Number(leg.slippage_try||0),0);
+  if(full)return `<div><strong>${escapeHtml(item.pair)}</strong><small>${escapeHtml(time)}</small></div><div><strong>${escapeHtml(item.buy_exchange)} → ${escapeHtml(item.sell_exchange)}</strong><small>${escapeHtml(item.state)} · ${escapeHtml(item.mode)} · ${legs.some(x=>String(x.fill_source||"").includes("hummingbot"))?"Hummingbot PaperTrade":"Paper"}</small></div><div><strong>${numberText(item.requested_base)} coin</strong><small>İstenen base · ücret ${tryMoney(fees)} · kayma ${tryMoney(slippage)}</small></div><div class="amount ${Number(item.realized_profit_try||0)<0?"loss":"profit"}"><strong>${escapeHtml(pnl)}</strong><small>Gerçekleşen net</small></div>`;
   return `<div><strong>${escapeHtml(item.pair)}</strong><small>${escapeHtml(time)}</small></div><div class="amount ${Number(item.realized_profit_try||0)<0?"loss":"profit"}"><strong>${escapeHtml(pnl)}</strong><small>${escapeHtml(item.state)}</small></div>`;
 }
 function renderTrades(payload){
@@ -143,8 +174,8 @@ function renderTrades(payload){
 }
 
 function renderHummingbotStatus(hb){
-  const labels={idle:"Hazır · test","test-ready":"Test hazır",stopped:"Durduruldu","emergency-stopped":"ACİL DURDURMA",blocked:"Engellendi","not-installed":"Kurulmadı"};
-  const label=labels[hb.state]||hb.state||"Bilinmiyor";setText("#hummingbot-health",label);setText("#bot-runtime-state",label);setText("#bot-strategy",hb.strategy||"idle");setText("#bot-orders",hb.orders_submitted??0);setText("#overview-hb-status",label);setText("#hummingbot-note",hb.reason||"Hummingbot hostu yalnızca test kontrolü için hazırdır; canlı emir kapalıdır.");
+  const labels={idle:"Hazır · test","test-ready":"Test hazır",waiting:"Veri bekleniyor",running:"Çalışıyor · PaperTrade",starting:"Başlıyor…",error:"Hata · logu inceleyin",stopped:"Durduruldu","emergency-stopped":"ACİL DURDURMA",blocked:"Engellendi","not-installed":"Kurulmadı"};
+  const label=labels[hb.state]||hb.state||"Bilinmiyor";setText("#hummingbot-health",label);setText("#bot-runtime-state",label);setText("#bot-strategy",hb.strategy||"idle");setText("#bot-orders",hb.orders_submitted??0);setText("#overview-hb-status",label);setText("#hummingbot-note",hb.reason||"Hummingbot PaperTrade resmi order-book ve ücret kurallarını kullanır; canlı emir kapalıdır.");
   const emergency=hb.state==="emergency-stopped";$$('[data-hb-action]').forEach(button=>{button.disabled=emergency&&button.dataset.hbAction!=="start_test"});
 }
 
@@ -164,7 +195,7 @@ async function renderQualification(){
 
 async function refresh(){
   if(state.refreshing)return;state.refreshing=true;
-  try{const [me,opportunities,health,summary,history,wallets,audit]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health"),api("/api/metrics/summary"),api("/api/executions?limit=100"),api("/api/balances"),api("/api/audit?limit=30")]);renderAccount(me);renderOpportunities(opportunities);renderHummingbotStatus(health.hummingbot||{});renderSummary(summary);renderTrades(history);renderBalances(wallets);renderAudit(audit);await renderQualification()}
+  try{const [me,opportunities,health,summary,history,wallets,paperWallets,audit]=await Promise.all([api("/api/me"),api("/api/opportunities"),api("/api/health"),api("/api/metrics/summary"),api("/api/executions?limit=100"),api("/api/balances"),api("/api/paper/balances"),api("/api/audit?limit=30")]);renderAccount(me);renderOpportunities(opportunities);renderHummingbotStatus(health.hummingbot||{});renderSummary(summary);renderTrades(history);renderBalances(wallets);renderPaperBalances(paperWallets);renderAudit(audit);await renderQualification()}
   catch(error){if(/Oturum|geçersiz/.test(error.message))await openAuth();else{setText("#scanner-age",error.message);showToast(error.message,"error")}}
   finally{state.refreshing=false}
 }
@@ -184,6 +215,8 @@ $$('[data-hb-action]').forEach(button=>button.addEventListener("click",async()=>
 $("#test-details")?.addEventListener("click",()=>navigate("risk"));$("#account-button")?.addEventListener("click",()=>navigate("accounts"));
 $("#bot-settings-form")?.addEventListener("submit",async event=>{event.preventDefault();setText("#bot-error","");setText("#bot-saved","");try{await api("/api/settings/bot",{method:"PUT",body:JSON.stringify({active:$("#bot-active").value==="true",btcturk_budget_try:$("#budget-btcturk").value,binance_tr_budget_try:$("#budget-binance").value})});setText("#bot-saved","Ayarlar kaydedildi · test modu");showToast("BOT bütçeleri kaydedildi");await refresh()}catch(error){setText("#bot-error",error.message)}});
 $("#budget-btcturk")?.addEventListener("input",updateBudgetPreview);$("#budget-binance")?.addEventListener("input",updateBudgetPreview);
+$("#fee-settings-form")?.addEventListener("submit",async event=>{event.preventDefault();setText("#fee-error","");setText("#fee-saved","");try{const result=await api("/api/settings/fees",{method:"PUT",body:JSON.stringify({fee_mode:$("#fee-mode").value,btcturk_maker_pct:$("#fee-bt-maker").value,btcturk_taker_pct:$("#fee-bt-taker").value,binance_tr_maker_pct:$("#fee-bn-maker").value,binance_tr_taker_pct:$("#fee-bn-taker").value,paper_initial_try_multiplier:$("#paper-multiplier").value})});renderFeeProfile(result);setText("#fee-saved","Komisyon profili kaydedildi · motor çalışıyorsa yeniden başlatın");showToast("Paper komisyonları güncellendi");await refresh()}catch(error){setText("#fee-error",error.message)}});
+$("#fee-mode")?.addEventListener("change",updateFeePreview);["#fee-bt-maker","#fee-bt-taker","#fee-bn-maker","#fee-bn-taker"].forEach(id=>$(id)?.addEventListener("input",updateFeePreview));
 $("#risk-form")?.addEventListener("submit",async event=>{event.preventDefault();setText("#risk-error","");try{await api("/api/settings/test",{method:"PUT",body:JSON.stringify({active:$("#risk-active").value==="true",max_trade_try:$("#risk-max").value,daily_loss_limit_try:$("#risk-daily").value,max_recovery_loss_try:$("#risk-recovery").value})});showToast("Risk ayarları kaydedildi");await refresh()}catch(error){setText("#risk-error",error.message)}});
 $("#refresh-balances")?.addEventListener("click",async()=>{try{renderBalances(await api("/api/balances"));showToast("Bakiyeler yenilendi")}catch(error){showToast(error.message,"error")}});
 

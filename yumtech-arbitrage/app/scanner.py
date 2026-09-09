@@ -32,11 +32,56 @@ class MarketScanner:
         self.books = OrderBookStore()
         self.streams = PublicMarketStreams(self.books)
         self.rest_fallback_count = 0
+        # Paper market orders are takers. Keep the fee profile mutable so the
+        # BOT page can apply a user's verified tier without restarting the
+        # public market streams.
+        self.fee_mode = "taker"
+        self.fee_rates = {
+            "BTCTürk": {"maker": Decimal("0.0015"), "taker": Decimal("0.0015"),
+                        "source": "connector-default"},
+            "Binance TR": {"maker": Decimal("0.0015"), "taker": Decimal("0.0015"),
+                           "source": "connector-default"},
+        }
+
+    def configure_fee_profile(self, profile: dict | None) -> None:
+        """Apply a validated fee profile to future opportunity snapshots."""
+        if not profile:
+            return
+        mode = str(profile.get("fee_mode", "taker")).lower()
+        self.fee_mode = mode if mode in {"maker", "taker"} else "taker"
+        fields = {
+            "BTCTürk": ("btcturk_maker_fee_rate", "btcturk_taker_fee_rate"),
+            "Binance TR": ("binance_tr_maker_fee_rate", "binance_tr_taker_fee_rate"),
+        }
+        for exchange, (maker_key, taker_key) in fields.items():
+            current = self.fee_rates[exchange]
+            for key, dest in ((maker_key, "maker"), (taker_key, "taker")):
+                try:
+                    value = Decimal(str(profile.get(key, current[dest])))
+                except (ArithmeticError, TypeError, ValueError):
+                    continue
+                if Decimal("0") <= value <= Decimal("0.10"):
+                    current[dest] = value
+            current["source"] = str(profile.get("fee_source") or current.get("source") or "manual")
+
+    def fee_rate(self, exchange: str, mode: str | None = None) -> Decimal:
+        selected = mode or self.fee_mode
+        return self.fee_rates.get(exchange, {}).get(selected, Decimal("0.0015"))
+
+    def fee_status(self) -> dict:
+        return {
+            "mode": self.fee_mode,
+            "exchanges": {
+                name: {"maker_rate": str(values["maker"]), "taker_rate": str(values["taker"]),
+                       "source": values.get("source", "connector-default")}
+                for name, values in self.fee_rates.items()
+            },
+        }
 
     async def run(self) -> None:
         self.running = True
         timeout = httpx.Timeout(8, connect=5)
-        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.3.2"}, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": "YUMTECH-Arbitrage/0.4.0"}, trust_env=False) as client:
             bt, bn = BTCTurkPublic(client), BinanceTRPublic(client)
             while self.running:
                 try:
@@ -64,6 +109,12 @@ class MarketScanner:
                                     bt_book = book
                                 else:
                                     bn_book = book
+                                # Persist the REST snapshot in the same
+                                # bounded store used by websocket updates.
+                                # This gives the PaperTrade matcher a real
+                                # depth snapshot even while a websocket is
+                                # connecting or recovering.
+                                self.books.replace(exchange, base, book[0], book[1])
                         directions = (
                             ("BTCTürk", "Binance TR", bt_book[0], bn_book[1], bt_markets[base].amount_step),
                             ("Binance TR", "BTCTürk", bn_book[0], bt_book[1], bn_markets[base].amount_step),
@@ -72,7 +123,7 @@ class MarketScanner:
                             item = calculate_opportunity(
                                 pair=f"{base}/TRY", buy_exchange=buy_name, sell_exchange=sell_name,
                                 asks=asks, bids=bids, quote_budget=self.target_try, amount_step=step,
-                                buy_fee_rate=Decimal("0.0015"), sell_fee_rate=Decimal("0.0015"),
+                                buy_fee_rate=self.fee_rate(buy_name), sell_fee_rate=self.fee_rate(sell_name),
                                 safety_buffer_rate=Decimal("0.0010"), min_profit_rate=self.min_profit_rate)
                             raw = asdict(item)
                             results.append({key: str(value) if isinstance(value, Decimal) else value for key, value in raw.items()})

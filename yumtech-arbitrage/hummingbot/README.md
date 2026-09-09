@@ -6,23 +6,25 @@ telemetry-off client configuration and the two audited CLOB connector overlays.
 
 The runtime image starts a small local control supervisor. It accepts only
 `start_test`, `stop`, `refresh` and `emergency_stop` commands through the
-shared data volume and acknowledges them in `hummingbot-status.json`. It does
-not launch a strategy or accept live commands in v0.3; the dashboard paper
-coordinator is the only executable test engine until the reviewed controller
-is released.
+shared data volume and acknowledges them in `hummingbot-status.json`. In v0.4
+`start_test` launches the reviewed `yumtech_paper_arbitrage.py` strategy on
+the official paper connectors. The dashboard paper coordinator remains a
+safe local fallback for the first unseeded API-test snapshot; it is not used
+after public order-book data is available.
 
-The execution image is intentionally not started by `docker-compose.yml` yet.
-BTCTürk and Binance TR are not official upstream connectors, so enabling an
-unqualified engine would turn an installation step into a live-money risk.
-Public scanning, encrypted credential storage and paper qualification can run
-now; live order submission remains a release gate.
+The execution image is started by `docker-compose.yml` as a paper-only host.
+BTCTürk and Binance TR are local connector overlays registered as official
+Hummingbot paper connectors. No API keys are copied into the paper config and
+no live connector can be selected by the supervisor; live order submission
+remains a separate release gate.
 
 Required engine controls:
 
 - upstream tag and image digest pinned;
 - `anonymized_metrics_mode: anonymized_metrics_disabled`;
 - `send_error_logs: false`;
-- IOC limit orders with a bounded price, never unbounded market orders;
+- PaperTrade uses the official five-second market-order queue; any future live
+  route must use bounded IOC limit orders, never unbounded market orders;
 - BTCTürk market-BUY recovery uses a side-aware TRY quote converter with fresh
   balance, fee, precision, minimum and maximum preflight checks;
 - persisted per-leg order IDs and a deterministic recovery state machine;

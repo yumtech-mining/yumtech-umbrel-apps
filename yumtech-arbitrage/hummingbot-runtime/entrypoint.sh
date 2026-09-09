@@ -28,9 +28,9 @@ write_status() {
 write_status "idle"
 trap 'write_status "stopped"' EXIT TERM INT
 
-# The service is deliberately an idle, ready Hummingbot host in this release.
-# The dashboard/paper engine cannot turn this into a live trader. A future
-# release may pass a reviewed strategy file only after all live gates pass.
+# The service is a test-only Hummingbot host. The local supervisor may start
+# the reviewed PaperTrade strategy, but no command or environment value can
+# select a live connector in this image.
 if [[ "${YUMTECH_LIVE_TRADING_ENABLED,,}" == "true" ]]; then
   echo "Refusing to start live Hummingbot: live execution is not enabled in this build." >&2
   write_status "blocked"
