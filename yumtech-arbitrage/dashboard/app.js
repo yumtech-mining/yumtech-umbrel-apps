@@ -58,14 +58,23 @@ function renderAccount(data){
 
 function renderBalances(payload){
   const exchanges=Object.fromEntries((payload.exchanges||[]).map(item=>[item.exchange,item]));
+  const tryValues={};
   for(const [exchange,id,statusId] of [["btcturk","#bt-balance","#bt-status"],["binance_tr","#bn-balance","#bn-status"]]){
     const item=exchanges[exchange]||{};
     const tryRow=(item.balances||[]).find(row=>row.asset==="TRY");
+    tryValues[exchange]=Number(tryRow?.available||0);
     $(id).textContent=tryRow?tryMoney(tryRow.available):"—";
-    if(item.state==="ok")$(statusId).textContent=`TRY kullanılabilir · ${tryMoney(tryRow?.available||0)}`;
+    if(item.state==="ok")$(statusId).textContent=tryRow?`TRY kullanılabilir · ${tryMoney(tryRow.available)}`:"Bakiye alındı · TRY yok";
     else if(item.state==="error")$(statusId).textContent=item.error||"Bakiye alınamadı";
+    const assetTarget=$(exchange==="btcturk"?"#bt-assets":"#bn-assets");assetTarget.textContent="";
+    const assets=(item.balances||[]).filter(row=>Number(row.total||0)>0).slice(0,6);
+    if(!assets.length){assetTarget.innerHTML="<small>Varlık bakiyesi yok</small>"}
+    else assets.forEach(row=>{const pill=document.createElement("small");pill.textContent=`${row.asset} ${row.total}`;assetTarget.appendChild(pill)});
   }
   $("#available-try").textContent=tryMoney(payload.available_try_total||0);
+  const total=tryValues.btcturk+tryValues.binance_tr;
+  $("#bt-bar").style.width=total?`${Math.round(tryValues.btcturk/total*100)}%`:"0%";
+  $("#bn-bar").style.width=total?`${Math.round(tryValues.binance_tr/total*100)}%`:"0%";
 }
 
 function renderSummary(payload){

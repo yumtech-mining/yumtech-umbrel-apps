@@ -21,6 +21,7 @@
         <a class="nav-item" href="#wallets" data-view="wallets"><span>◈</span> Cüzdanlar</a>
         <a class="nav-item" href="#accounts" data-view="accounts"><span>⌘</span> API Hesapları</a>
         <a class="nav-item" href="#risk" data-view="risk"><span>◇</span> Risk ve Ayarlar</a>
+        <a class="nav-item" href="#system" data-view="system"><span>◉</span> Sistem</a>
       </nav>
       <div class="sidebar-foot">
         <span class="privacy-dot"></span>
@@ -49,7 +50,7 @@
         <button type="button" id="test-details">Test ölçütleri</button>
       </section>
 
-      <section class="metric-grid" aria-label="Özet değerler">
+      <section class="metric-grid" id="overview" aria-label="Özet değerler">
         <article class="metric-card primary">
           <span>Bugünkü net sonuç</span><strong id="today-pnl">₺0,00</strong>
           <small><b>TEST</b> Gerçekleşen işlem yok</small>
@@ -96,11 +97,13 @@
             <div class="exchange-balance">
               <div class="exchange-logo bt">B</div><div><strong>BTCTürk</strong><small id="bt-status">API anahtarı bekleniyor</small></div><b id="bt-balance">—</b>
             </div>
-            <div class="bar"><i style="width:55%"></i></div>
+            <div class="bar"><i id="bt-bar" style="width:0%"></i></div>
+            <div class="asset-list" id="bt-assets"><small>Bakiye verisi bekleniyor</small></div>
             <div class="exchange-balance">
               <div class="exchange-logo bn">TR</div><div><strong>Binance TR</strong><small id="bn-status">API anahtarı bekleniyor</small></div><b id="bn-balance">—</b>
             </div>
-            <div class="bar binance"><i style="width:45%"></i></div>
+            <div class="bar binance"><i id="bn-bar" style="width:0%"></i></div>
+            <div class="asset-list" id="bn-assets"><small>Bakiye verisi bekleniyor</small></div>
             <button class="secondary full" type="button" data-view="accounts">API hesaplarını yönet</button>
           </section>
         </aside>
@@ -110,7 +113,7 @@
           <div class="trade-list" id="trade-list"></div>
         </section>
 
-        <section class="panel health-panel">
+        <section class="panel health-panel" id="system">
           <div class="panel-head"><div><p class="eyebrow">ALTYAPI</p><h2>Borsa bağlantıları</h2></div><span class="live-label">CANLI</span></div>
           <div class="latency-row"><span>BTCTürk WebSocket</span><b id="bt-health">Bekliyor</b><i></i></div>
           <div class="latency-row"><span>Binance TR WebSocket</span><b id="bn-health">Bekliyor</b><i></i></div>
