@@ -16,7 +16,9 @@ def test_hummingbot_runtime_is_pinned_idle_and_reporting_disabled():
     entrypoint = (Path(__file__).parents[1] / "hummingbot-runtime" / "entrypoint.sh").read_text()
     compose = (Path(__file__).parents[1] / "docker-compose.yml").read_text()
     assert "hummingbot/hummingbot:version-2.16.0" in dockerfile
+    assert "0001-disable-telemetry-by-default.patch" in dockerfile
     assert "YUMTECH_LIVE_TRADING_ENABLED=false" in dockerfile
     assert "YUMTECH_LIVE_TRADING_ENABLED,," in entrypoint
+    assert "anonymized_metrics_mode: anonymized_metrics_disabled" in entrypoint
     assert "YUMTECH_TELEMETRY_DISABLED: \"true\"" in compose
     assert 'command: ["tail", "-f", "/dev/null"]' in compose

@@ -6,6 +6,16 @@ mkdir -p "$(dirname -- "$status_file")" /home/hummingbot/conf
 if [[ ! -e /home/hummingbot/conf/conf_client.yml ]]; then
   install -m 0600 /opt/yumtech-conf_client.yml /home/hummingbot/conf/conf_client.yml
 fi
+# Enforce the local-only privacy invariant even when an older persisted config
+# is mounted from /data. These are Hummingbot's documented global keys.
+for setting in "anonymized_metrics_mode: anonymized_metrics_disabled" "send_error_logs: false"; do
+  key="${setting%%:*}"
+  if grep -qE "^[[:space:]]*${key}:" /home/hummingbot/conf/conf_client.yml; then
+    sed -i -E "s|^[[:space:]]*${key}:.*$|${setting}|" /home/hummingbot/conf/conf_client.yml
+  else
+    printf '%s\n' "$setting" >> /home/hummingbot/conf/conf_client.yml
+  fi
+done
 
 write_status() {
   local state="$1"
