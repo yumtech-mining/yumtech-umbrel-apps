@@ -1,0 +1,31 @@
+manifestVersion: "1.0.0"
+id: yumtech-tv
+category: media
+name: YUMLU TV
+version: "1.0.0"
+icon: "https://raw.githubusercontent.com/yumtech-mining/yumtech-umbrel-apps/main/yumtech-tv/icon.svg"
+tagline: Türkiye canlı yayınlarını tek ekranda izleyin
+description: >-
+  YUMLU TV, Türkiye'de herkese açık olarak yayınlanan internet TV akışlarını
+  Umbrel üzerinde tek ekranda izlemek için hazırlanmış hafif bir uygulamadır.
+  Sol taraftaki kanal listesinden bir kanala tıklayın; yayın sağdaki oynatıcıda
+  açılır. Oynatıcıya çift tıklayarak tam ekranı açıp kapatabilirsiniz.
+
+  Kanal listesi IPTV-org Türkiye M3U kaynağından açılışta yenilenir. Uygulama
+  yayın dosyalarını barındırmaz veya yeniden dağıtmaz; yalnızca kaynak
+  sağlayıcıların herkese açık bağlantılarını görüntüler. Bazı yayınlar
+  yayıncı, bölge veya tarayıcı kısıtları nedeniyle çalışmayabilir.
+releaseNotes: >-
+  İlk sürüm: duyarlı kanal listesi, arama, kategori filtreleri, HLS oynatma,
+  çift tıklamayla tam ekran ve otomatik kanal listesi yenileme.
+developer: YUMTECH
+website: https://github.com/yumtech-mining/yumtech-umbrel-apps
+repo: https://github.com/yumtech-mining/yumtech-umbrel-apps
+support: https://github.com/yumtech-mining/yumtech-umbrel-apps/issues
+port: 8097
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+submitter: yumtech-mining
+submission: https://github.com/yumtech-mining/yumtech-umbrel-apps

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">YUMLU TV</title>
+  <desc id="desc">Turkuaz bir ekran içinde oynat düğmesi</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#091b35"/><stop offset="1" stop-color="#07101f"/></linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#55e6e8"/><stop offset="1" stop-color="#1299bb"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <path d="M151 127 256 54l105 73" fill="none" stroke="#55e6e8" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="79" y="133" width="354" height="263" rx="39" fill="url(#cyan)"/>
+  <rect x="102" y="156" width="308" height="217" rx="25" fill="#07152b"/>
+  <path d="m226 212 92 52-92 52z" fill="#fff"/>
+  <path d="M183 433h146" stroke="#55e6e8" stroke-width="18" stroke-linecap="round"/>
+</svg>

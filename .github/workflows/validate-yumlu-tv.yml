@@ -1,0 +1,27 @@
+name: Validate YUMLU TV
+
+on:
+  push:
+    paths:
+      - "yumtech-tv/**"
+      - ".github/workflows/validate-yumlu-tv.yml"
+  pull_request:
+    paths:
+      - "yumtech-tv/**"
+      - ".github/workflows/validate-yumlu-tv.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Validate JavaScript syntax
+        run: node --check yumtech-tv/web/app.js
+      - name: Validate nginx configuration
+        run: |
+          docker run --rm             -v "$PWD/yumtech-tv/web:/usr/share/nginx/html:ro"             -v "$PWD/yumtech-tv/nginx.conf:/etc/nginx/nginx.conf:ro"             nginx:1.27-alpine nginx -t
